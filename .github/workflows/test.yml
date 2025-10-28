@@ -43,29 +43,29 @@ jobs:
           # Start PowerDNS services in background
           docker-compose up -d
 
-          # Wait for MySQL to be ready with retry logic
-          echo "Waiting for MySQL to be ready..."
+          # Wait for PostgreSQL to be ready with retry logic
+          echo "Waiting for PostgreSQL to be ready..."
           max_attempts=15
           attempt=1
 
           while [ $attempt -le $max_attempts ]; do
-            echo "Attempt $attempt/$max_attempts: Checking MySQL readiness..."
+            echo "Attempt $attempt/$max_attempts: Checking PostgreSQL readiness..."
 
-            if docker-compose exec -T mysql mysql -uroot -psecret -e "SELECT 1;" > /dev/null 2>&1; then
-              echo "MySQL is ready!"
-              # Additional check to ensure MySQL is fully ready
+            if docker-compose exec -T postgres psql -U powerdns -d powerdns -c "SELECT 1;" > /dev/null 2>&1; then
+              echo "PostgreSQL is ready!"
+              # Additional check to ensure PostgreSQL is fully ready
               sleep 5
               break
             fi
 
             if [ $attempt -eq $max_attempts ]; then
-              echo "MySQL failed to start after $max_attempts attempts"
-              echo "=== MySQL Container Logs ==="
-              docker-compose logs mysql
+              echo "PostgreSQL failed to start after $max_attempts attempts"
+              echo "=== PostgreSQL Container Logs ==="
+              docker-compose logs postgres
               exit 1
             fi
 
-            echo "MySQL not ready yet, waiting 20 seconds before retry..."
+            echo "PostgreSQL not ready yet, waiting 20 seconds before retry..."
             sleep 20
             attempt=$((attempt + 1))
           done
@@ -89,8 +89,8 @@ jobs:
               echo "PowerDNS failed to start after $max_attempts attempts"
               echo "=== PowerDNS Container Logs ==="
               docker-compose logs pdns-auth
-              echo "=== MySQL Container Logs ==="
-              docker-compose logs mysql
+              echo "=== PostgreSQL Container Logs ==="
+              docker-compose logs postgres
               exit 1
             fi
 
@@ -129,8 +129,8 @@ jobs:
                docker-compose logs pdns-rec
                echo "=== PowerDNS Container Logs ==="
                docker-compose logs pdns-auth
-               echo "=== MySQL Container Logs ==="
-               docker-compose logs mysql
+               echo "=== PostgreSQL Container Logs ==="
+               docker-compose logs postgres
                exit 1
              fi
 
@@ -187,8 +187,8 @@ jobs:
           docker-compose logs --tail=100
           echo "=== PowerDNS Container Logs ==="
           docker-compose logs --tail=100 pdns-auth
-          echo "=== MySQL Container Logs ==="
-          docker-compose logs --tail=100 mysql
+          echo "=== PostgreSQL Container Logs ==="
+          docker-compose logs --tail=100 postgres
           echo "=== Docker Container Status ==="
           docker-compose ps -a
           echo "=== Docker Images ==="
