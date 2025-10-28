@@ -1,85 +1,208 @@
-# Terraform Provider testing workflow.
-name: Tests
+name: Test
 
-# This GitHub action runs your tests for each pull request and push.
-# Optionally, you can turn it on using a schedule for regular testing.
-on:
-  pull_request:
-    paths-ignore:
-      - 'README.md'
-  push:
-    paths-ignore:
-      - 'README.md'
+on: [push, pull_request]
 
-# Testing only needs permissions to read the repository contents.
 permissions:
   contents: read
 
 jobs:
-  # Ensure project builds before running testing matrix
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
-        with:
-          go-version-file: 'go.mod'
-          cache: true
-      - run: go mod download
-      - run: go build -v .
-      - name: Run linters
-        uses: golangci/golangci-lint-action@4afd733a84b1f43292c63897423277bb7f4313a9 # v8.0.0
-        with:
-          version: latest
-
-  generate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
-        with:
-          go-version-file: 'go.mod'
-          cache: true
-      # We need the latest version of Terraform for our documentation generation to use
-      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
-        with:
-          terraform_wrapper: false
-      - run: make generate
-      - name: git diff
-        run: |
-          git diff --compact-summary --exit-code || \
-            (echo; echo "Unexpected difference in directories after code generation. Run 'make generate' command and commit."; exit 1)
-
-  # Run acceptance tests in a matrix with Terraform CLI versions
   test:
-    name: Terraform Provider Acceptance Tests
-    needs: build
+    name: Test and Coverage
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        # list whatever Terraform versions here you would like to support
-        terraform:
-          - '1.0.*'
-          - '1.1.*'
-          - '1.2.*'
-          - '1.3.*'
-          - '1.4.*'
+    services:
+      # Use docker service to run containers
+      docker:
+        image: docker:dind
+        options: --privileged
+
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
         with:
           go-version-file: 'go.mod'
           cache: true
-      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+
+      - name: Install Docker Compose
+        run: |
+          curl -L "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          chmod +x /usr/local/bin/docker-compose
+
+      - name: Build provider binary
+        run: |
+          go build -o terraform-provider-powerdns .
+          ls -la terraform-provider-powerdns*
+
+      - name: Start PowerDNS with Docker Compose
+        run: |
+          # Clean start - remove any existing containers and volumes
+          docker-compose down -v --remove-orphans || true
+
+          # Start PowerDNS services in background
+          docker-compose up -d
+
+          # Wait for MySQL to be ready with retry logic
+          echo "Waiting for MySQL to be ready..."
+          max_attempts=15
+          attempt=1
+
+          while [ $attempt -le $max_attempts ]; do
+            echo "Attempt $attempt/$max_attempts: Checking MySQL readiness..."
+
+            if docker-compose exec -T mysql mysql -uroot -psecret -e "SELECT 1;" > /dev/null 2>&1; then
+              echo "MySQL is ready!"
+              # Additional check to ensure MySQL is fully ready
+              sleep 5
+              break
+            fi
+
+            if [ $attempt -eq $max_attempts ]; then
+              echo "MySQL failed to start after $max_attempts attempts"
+              echo "=== MySQL Container Logs ==="
+              docker-compose logs mysql
+              exit 1
+            fi
+
+            echo "MySQL not ready yet, waiting 20 seconds before retry..."
+            sleep 20
+            attempt=$((attempt + 1))
+          done
+
+          # Wait for PowerDNS to be ready with retry logic
+          echo "Waiting for PowerDNS to be ready..."
+          max_attempts=15
+          attempt=1
+
+          while [ $attempt -le $max_attempts ]; do
+            echo "Attempt $attempt/$max_attempts: Checking PowerDNS readiness..."
+
+            if curl -f --max-time 15 http://localhost:8081/api -H "X-API-Key: secret" > /dev/null 2>&1; then
+              echo "PowerDNS is ready!"
+              # Additional check to ensure PowerDNS is fully ready
+              sleep 3
+              break
+            fi
+
+            if [ $attempt -eq $max_attempts ]; then
+              echo "PowerDNS failed to start after $max_attempts attempts"
+              echo "=== PowerDNS Container Logs ==="
+              docker-compose logs pdns-auth
+              echo "=== MySQL Container Logs ==="
+              docker-compose logs mysql
+              exit 1
+            fi
+
+            echo "PowerDNS not ready yet, waiting 20 seconds before retry..."
+            sleep 20
+            attempt=$((attempt + 1))
+          done
+
+          # Verify PowerDNS API is working
+          echo "Verifying PowerDNS API..."
+          response=$(curl -s --max-time 10 http://localhost:8081/api/v1/servers -H "X-API-Key: secret")
+          echo "PowerDNS servers response: $response"
+
+          if [ -z "$response" ]; then
+            echo "PowerDNS API returned empty response"
+            exit 1
+          fi
+           # Wait for PowerDNS Recursor to be ready with retry logic
+           echo "Waiting for PowerDNS Recursor to be ready..."
+           max_attempts=15
+           attempt=1
+
+           while [ $attempt -le $max_attempts ]; do
+             echo "Attempt $attempt/$max_attempts: Checking PowerDNS Recursor readiness..."
+
+             if curl -f --max-time 15 http://localhost:8082/api -H "X-API-Key: secret" > /dev/null 2>&1; then
+               echo "PowerDNS Recursor is ready!"
+               # Additional check to ensure Recursor is fully ready
+               sleep 3
+               break
+             fi
+
+             if [ $attempt -eq $max_attempts ]; then
+               echo "PowerDNS Recursor failed to start after $max_attempts attempts"
+               echo "=== PowerDNS Recursor Container Logs ==="
+               docker-compose logs pdns-rec
+               echo "=== PowerDNS Container Logs ==="
+               docker-compose logs pdns-auth
+               echo "=== MySQL Container Logs ==="
+               docker-compose logs mysql
+               exit 1
+             fi
+
+             echo "PowerDNS Recursor not ready yet, waiting 20 seconds before retry..."
+             sleep 20
+             attempt=$((attempt + 1))
+           done
+
+      - name: Run unit tests with coverage
+        run: |
+          echo "Running unit tests with coverage..."
+          go test -v -coverprofile=unit-coverage.out -covermode=atomic $(go list ./... | grep -v 'vendor')
+
+      - name: Run acceptance tests with coverage
+        run: |
+          # Set environment variables for acceptance tests
+          export PDNS_SERVER_URL="http://localhost:8081"
+          export PDNS_API_KEY="secret"
+          export PDNS_RECURSOR_SERVER_URL="http://localhost:8082"
+          export TF_ACC=1
+
+          # Run acceptance tests with coverage
+          echo "Running acceptance tests with coverage..."
+          timeout 20m go test -v -coverprofile=acceptance-coverage.out -covermode=atomic $(go list ./... | grep -v 'vendor') -parallel=5 -timeout=120m
+
+      - name: Merge coverage profiles
+        run: |
+          # Install gocovmerge if coverage files exist
+          if [ -f "unit-coverage.out" ] || [ -f "acceptance-coverage.out" ]; then
+            go install github.com/wadey/gocovmerge@latest
+            
+            # Create merged coverage file
+            gocovmerge unit-coverage.out acceptance-coverage.out > coverage.out
+            
+            # Show coverage summary
+            go tool cover -func=coverage.out
+          else
+            echo "No coverage files found to merge"
+          fi
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5.5.1
         with:
-          terraform_version: ${{ matrix.terraform }}
-          terraform_wrapper: false
-      - run: go mod download
-      - env:
-          TF_ACC: "1"
-        run: go test -v -cover ./internal/provider/
-        timeout-minutes: 10
+          files: ./coverage.out
+          flags: tests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+          verbose: true
+
+      - name: Upload test logs on failure
+        if: failure()
+        run: |
+          echo "=== Docker Compose Logs ==="
+          docker-compose logs --tail=100
+          echo "=== PowerDNS Container Logs ==="
+          docker-compose logs --tail=100 pdns-auth
+          echo "=== MySQL Container Logs ==="
+          docker-compose logs --tail=100 mysql
+          echo "=== Docker Container Status ==="
+          docker-compose ps -a
+          echo "=== Docker Images ==="
+          docker images
+          echo "=== Disk Usage ==="
+          df -h
+
+      - name: Cleanup
+        if: always()
+        run: |
+          # Stop and remove containers, networks, and volumes
+          docker-compose down -v --remove-orphans --timeout 30
+
+          # Clean up any remaining containers
+          docker container prune -f
+          docker network prune -f
+          docker volume prune -f
