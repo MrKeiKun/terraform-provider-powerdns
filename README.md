@@ -1,64 +1,135 @@
-# Terraform Provider Scaffolding (Terraform Plugin Framework)
+# terraform-provider-powerdns
 
-_This template repository is built on the [Terraform Plugin Framework](https://github.com/hashicorp/terraform-plugin-framework). The template repository built on the [Terraform Plugin SDK](https://github.com/hashicorp/terraform-plugin-sdk) can be found at [terraform-provider-scaffolding](https://github.com/hashicorp/terraform-provider-scaffolding). See [Which SDK Should I Use?](https://developer.hashicorp.com/terraform/plugin/framework-benefits) in the Terraform documentation for additional information._
+The Terraform PowerDNS provider allows you to manage PowerDNS zones and records using Terraform. It is maintained by MrKeiKun.
 
-This repository is a *template* for a [Terraform](https://www.terraform.io) provider. It is intended as a starting point for creating Terraform providers, containing:
-
-- A resource and a data source (`internal/provider/`),
-- Examples (`examples/`) and generated documentation (`docs/`),
-- Miscellaneous meta files.
-
-These files contain boilerplate code that you will need to edit to create your own Terraform provider. Tutorials for creating Terraform providers can be found on the [HashiCorp Developer](https://developer.hashicorp.com/terraform/tutorials/providers-plugin-framework) platform. _Terraform Plugin Framework specific guides are titled accordingly._
-
-Please see the [GitHub template repository documentation](https://help.github.com/en/github/creating-cloning-and-archiving-repositories/creating-a-repository-from-a-template) for how to create a new repository from this template on GitHub.
-
-Once you've written your provider, you'll want to [publish it on the Terraform Registry](https://developer.hashicorp.com/terraform/registry/providers/publishing) so that others can use it.
+- Website: https://www.terraform.io
+- [![Gitter chat](https://badges.gitter.im/hashicorp-terraform/Lobby.png)](https://gitter.im/hashicorp-terraform/Lobby)
+- Mailing list: [Google Groups](http://groups.google.com/group/terraform-tool)
 
 ## Requirements
 
-- [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.0
-- [Go](https://golang.org/doc/install) >= 1.24
+- [Terraform](https://www.terraform.io/downloads.html) >=1.0.0
+- [Go](https://golang.org/doc/install) >=1.21.0 (to build the provider plugin)
+- [Goreleaser](https://goreleaser.com) >=v6.3.x (for releasing provider plugin)
+
+The Go ang Goreleaser minimum versions were set to be able to build plugin for Darwin/ARM64 architecture [see goreleaser notes.](https://goreleaser.com/deprecations/#builds-for-darwinarm64)
+
+## Using the Provider
+
+```hcl
+terraform {
+  required_providers {
+    powerdns = {
+      source = "MrKeiKun/powerdns"
+      version = "0.1.0"
+    }
+  }
+}
+
+provider "powerdns" {
+  server_url = "https://host:port/"           # authoritative server url (can also be provided with PDNS_SERVER_URL variable)
+  recursor_server_url = "https://host:port/"  # recursor server url (can also be provided with PDNS_RECURSOR_SERVER_URL variable)
+  api_key             = "secret"              # can also be provided with PDNS_API_KEY variable
+}
+
+# Note: The provider supports both PowerDNS Authoritative Server and PowerDNS Recursor.
+# Configure server_url for authoritative operations and recursor_server_url for recursor operations.
+```
+
+For detailed usage see [provider's documentation page](https://registry.terraform.io/providers/MrKeiKun/powerdns/latest/docs)
+
+## Environment Variables
+
+The provider supports configuration via environment variables as an alternative to the provider block configuration:
+
+- `PDNS_SERVER_URL` - The URL of the PowerDNS Authoritative Server (e.g., `https://host:port/`)
+- `PDNS_API_KEY` - The API key for authenticating with the PowerDNS server
+- `PDNS_RECURSOR_SERVER_URL` - The URL of the PowerDNS Recursor Server (e.g., `https://host:port/`)
+- `PDNS_CLIENT_CERT_FILE` - Path to the client certificate file for authentication
+- `PDNS_CLIENT_CERT_KEY_FILE` - Path to the client certificate key file
+- `PDNS_INSECURE_HTTPS` - Disable TLS certificate verification (true/false)
+- `PDNS_CACERT` - Content or path to the CA certificate for server verification
+- `PDNS_CACHE_REQUESTS` - Enable caching of API requests (true/false)
+- `PDNS_CACHE_MEM_SIZE` - Cache memory size in MB
+- `PDNS_CACHE_TTL` - Cache TTL in seconds
+
+When these environment variables are set, you can use the provider without explicit configuration:
+
+```hcl
+provider "powerdns" {}
+```
 
 ## Building The Provider
 
-1. Clone the repository
-1. Enter the repository directory
-1. Build the provider using the Go `install` command:
+Clone the provider repository:
 
-```shell
-go install
+```sh
+$ git clone git@github.com:MrKeiKun/terraform-provider-powerdns.git
+
+Navigate to repository directory:
+
+```sh
+$ cd terraform-provider-powerdns
 ```
 
-## Adding Dependencies
+Build repository:
 
-This provider uses [Go modules](https://github.com/golang/go/wiki/Modules).
-Please see the Go documentation for the most up to date information about using Go modules.
-
-To add a new dependency `github.com/author/dependency` to your Terraform provider:
-
-```shell
-go get github.com/author/dependency
-go mod tidy
+```sh
+$ go build
 ```
 
-Then commit the changes to `go.mod` and `go.sum`.
-
-## Using the provider
-
-Fill this in for each provider
+This will compile and place the provider binary, `terraform-provider-powerdns`, in the current directory.
 
 ## Developing the Provider
 
-If you wish to work on the provider, you'll first need [Go](http://www.golang.org) installed on your machine (see [Requirements](#requirements) above).
+If you wish to work on the provider, you'll first need [Go](http://www.golang.org) installed on your machine (version 1.21+ is _recommended_).
+You'll also need to have `$GOPATH/bin` in your `$PATH`.
 
-To compile the provider, run `go install`. This will build the provider and put the provider binary in the `$GOPATH/bin` directory.
+Make sure the changes you performed pass linting:
 
-To generate or update documentation, run `make generate`.
+```sh
+$ make lint
+```
 
-In order to run the full suite of Acceptance tests, run `make testacc`.
+To install the provider, run `make build`. This will build the provider and put the provider binary in the current working directory.
 
-*Note:* Acceptance tests create real resources, and often cost money to run.
+```sh
+$ make build
+```
 
-```shell
-make testacc
+In order to run local provider tests, you can simply run `make test`.
+
+```sh
+$ make test
+```
+
+For running acceptance tests locally, you'll need to use `docker-compose` to prepare the test environment:
+
+```sh
+docker-compose run --rm setup
+```
+
+After setup is done, run the acceptance tests with `make testacc` (note the env variables needed to interact with the PowerDNS container)
+
+- HTTP
+
+```sh
+~$  PDNS_SERVER_URL=http://localhost:8081 \
+    PDNS_API_KEY=secret \
+    make testacc
+```
+
+- HTTPS
+
+```sh
+~$  PDNS_SERVER_URL=localhost:4443 \
+    PDNS_API_KEY=secret \
+    PDNS_CACERT=$(cat ./tests/files/ssl/rootCA/rootCA.crt) \
+    make testacc
+```
+
+And finally cleanup containers spun up by `docker-compose`:
+
+```sh
+~$ docker-compose down
 ```
