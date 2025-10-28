@@ -12,15 +12,15 @@ func TestNewClient(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name                string
-		serverURL           string
-		recursorServerURL   string
-		apiKey              string
-		cacheEnable         bool
-		cacheSizeMB         string
-		cacheTTL            int
-		expectError         bool
-		expectedErrorMsg    string
+		name              string
+		serverURL         string
+		recursorServerURL string
+		apiKey            string
+		cacheEnable       bool
+		cacheSizeMB       string
+		cacheTTL          int
+		expectError       bool
+		expectedErrorMsg  string
 	}{
 		{
 			name:              "valid client creation",
@@ -33,37 +33,37 @@ func TestNewClient(t *testing.T) {
 			expectError:       false,
 		},
 		{
-			name:             "empty serverURL",
-			serverURL:        "",
+			name:              "empty serverURL",
+			serverURL:         "",
 			recursorServerURL: "https://recursor.example.com",
-			apiKey:           "test-key",
-			expectError:      true,
-			expectedErrorMsg: "serverURL cannot be empty",
+			apiKey:            "test-key",
+			expectError:       true,
+			expectedErrorMsg:  "serverURL cannot be empty",
 		},
 		{
-			name:             "empty recursorServerURL",
-			serverURL:        "https://example.com",
+			name:              "empty recursorServerURL",
+			serverURL:         "https://example.com",
 			recursorServerURL: "",
-			apiKey:           "test-key",
-			expectError:      true,
-			expectedErrorMsg: "recursorServerURL cannot be empty",
+			apiKey:            "test-key",
+			expectError:       true,
+			expectedErrorMsg:  "recursorServerURL cannot be empty",
 		},
 		{
-			name:             "empty apiKey",
-			serverURL:        "https://example.com",
+			name:              "empty apiKey",
+			serverURL:         "https://example.com",
 			recursorServerURL: "https://recursor.example.com",
-			apiKey:           "",
-			expectError:      true,
-			expectedErrorMsg: "apiKey cannot be empty",
+			apiKey:            "",
+			expectError:       true,
+			expectedErrorMsg:  "apiKey cannot be empty",
 		},
 		{
-			name:             "negative cacheTTL",
-			serverURL:        "https://example.com",
+			name:              "negative cacheTTL",
+			serverURL:         "https://example.com",
 			recursorServerURL: "https://recursor.example.com",
-			apiKey:           "test-key",
-			cacheTTL:         -1,
-			expectError:      true,
-			expectedErrorMsg: "cacheTTL cannot be negative",
+			apiKey:            "test-key",
+			cacheTTL:          -1,
+			expectError:       true,
+			expectedErrorMsg:  "cacheTTL cannot be negative",
 		},
 	}
 
@@ -204,8 +204,8 @@ func TestResourceRecordSet_ID(t *testing.T) {
 
 func TestParseID(t *testing.T) {
 	tests := []struct {
-		name        string
-		input       string
+		name         string
+		input        string
 		expectedName string
 		expectedType string
 		hasError     bool
@@ -218,8 +218,8 @@ func TestParseID(t *testing.T) {
 			hasError:     false,
 		},
 		{
-			name:    "invalid ID",
-			input:   "invalid",
+			name:     "invalid ID",
+			input:    "invalid",
 			hasError: true,
 		},
 	}

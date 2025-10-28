@@ -101,7 +101,7 @@ func NewClient(ctx context.Context, serverURL string, recursorServerURL string, 
 	return client, nil
 }
 
-// parseCacheSizeMB parses cache size in MB and returns bytes
+// parseCacheSizeMB parses cache size in MB and returns bytes.
 func parseCacheSizeMB(cacheSizeMB string) (int, error) {
 	size, err := strconv.Atoi(cacheSizeMB)
 	if err != nil {

@@ -22,13 +22,15 @@ func TestAccProvider_Configure(t *testing.T) {
 
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: map[string]func() (tfprotov6.ProviderServer, error){
-			"powerdns": providerserver.NewProtocol6(New("test")()),
+			"powerdns": func() (tfprotov6.ProviderServer, error) {
+				return providerserver.NewProtocol6(New("test")())(), nil
+			},
 		},
 		Steps: []resource.TestStep{
 			{
 				Config: `provider "powerdns" {}`,
-				Check: resource.ComposeTestCheckFunc(
-					// Add checks here if needed
+				Check:  resource.ComposeTestCheckFunc(
+				// Add checks here if needed
 				),
 			},
 		},
@@ -41,28 +43,28 @@ func TestGetConfigValueWithEnvFallback(t *testing.T) {
 	defer os.Unsetenv("TEST_ENV_VAR")
 
 	tests := []struct {
-		name       string
+		name        string
 		configValue string
-		envVar     string
-		expected   string
+		envVar      string
+		expected    string
 	}{
 		{
-			name:       "config value provided",
+			name:        "config value provided",
 			configValue: "config-value",
-			envVar:     "TEST_ENV_VAR",
-			expected:   "config-value",
+			envVar:      "TEST_ENV_VAR",
+			expected:    "config-value",
 		},
 		{
-			name:       "fallback to env var",
+			name:        "fallback to env var",
 			configValue: "",
-			envVar:     "TEST_ENV_VAR",
-			expected:   "env-value",
+			envVar:      "TEST_ENV_VAR",
+			expected:    "env-value",
 		},
 		{
-			name:       "no env var set",
+			name:        "no env var set",
 			configValue: "",
-			envVar:     "NON_EXISTENT_VAR",
-			expected:   "",
+			envVar:      "NON_EXISTENT_VAR",
+			expected:    "",
 		},
 	}
 
@@ -88,44 +90,44 @@ func TestGetConfigBoolWithEnvFallback(t *testing.T) {
 	}()
 
 	tests := []struct {
-		name       string
+		name        string
 		configValue bool
-		isNull     bool
-		isUnknown  bool
-		envVar     string
-		expected   bool
+		isNull      bool
+		isUnknown   bool
+		envVar      string
+		expected    bool
 	}{
 		{
-			name:       "config value provided",
+			name:        "config value provided",
 			configValue: true,
-			isNull:     false,
-			isUnknown:  false,
-			envVar:     "TEST_BOOL_TRUE",
-			expected:   true,
+			isNull:      false,
+			isUnknown:   false,
+			envVar:      "TEST_BOOL_TRUE",
+			expected:    true,
 		},
 		{
-			name:       "fallback to env var true",
+			name:        "fallback to env var true",
 			configValue: false,
-			isNull:     true,
-			isUnknown:  false,
-			envVar:     "TEST_BOOL_TRUE",
-			expected:   true,
+			isNull:      true,
+			isUnknown:   false,
+			envVar:      "TEST_BOOL_TRUE",
+			expected:    true,
 		},
 		{
-			name:       "fallback to env var false",
+			name:        "fallback to env var false",
 			configValue: true,
-			isNull:     true,
-			isUnknown:  false,
-			envVar:     "TEST_BOOL_FALSE",
-			expected:   false,
+			isNull:      true,
+			isUnknown:   false,
+			envVar:      "TEST_BOOL_FALSE",
+			expected:    false,
 		},
 		{
-			name:       "invalid env var",
+			name:        "invalid env var",
 			configValue: true,
-			isNull:     true,
-			isUnknown:  false,
-			envVar:     "TEST_BOOL_INVALID",
-			expected:   true, // Should return config value on parse error
+			isNull:      true,
+			isUnknown:   false,
+			envVar:      "TEST_BOOL_INVALID",
+			expected:    true, // Should return config value on parse error
 		},
 	}
 
@@ -149,36 +151,36 @@ func TestGetConfigIntWithEnvFallback(t *testing.T) {
 	}()
 
 	tests := []struct {
-		name       string
+		name        string
 		configValue int
-		isNull     bool
-		isUnknown  bool
-		envVar     string
-		expected   int
+		isNull      bool
+		isUnknown   bool
+		envVar      string
+		expected    int
 	}{
 		{
-			name:       "config value provided",
+			name:        "config value provided",
 			configValue: 10,
-			isNull:     false,
-			isUnknown:  false,
-			envVar:     "TEST_INT_42",
-			expected:   10,
+			isNull:      false,
+			isUnknown:   false,
+			envVar:      "TEST_INT_42",
+			expected:    10,
 		},
 		{
-			name:       "fallback to env var",
+			name:        "fallback to env var",
 			configValue: 0,
-			isNull:     true,
-			isUnknown:  false,
-			envVar:     "TEST_INT_42",
-			expected:   42,
+			isNull:      true,
+			isUnknown:   false,
+			envVar:      "TEST_INT_42",
+			expected:    42,
 		},
 		{
-			name:       "invalid env var",
+			name:        "invalid env var",
 			configValue: 10,
-			isNull:     true,
-			isUnknown:  false,
-			envVar:     "TEST_INT_INVALID",
-			expected:   10, // Should return config value on parse error
+			isNull:      true,
+			isUnknown:   false,
+			envVar:      "TEST_INT_INVALID",
+			expected:    10, // Should return config value on parse error
 		},
 	}
 

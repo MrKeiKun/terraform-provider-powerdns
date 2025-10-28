@@ -13,5 +13,7 @@ func testAccPreCheck(t *testing.T) {
 }
 
 var testAccProtoV6ProviderFactories = map[string]func() (tfprotov6.ProviderServer, error){
-	"powerdns": providerserver.NewProtocol6(New("test")()),
+	"powerdns": func() (tfprotov6.ProviderServer, error) {
+		return providerserver.NewProtocol6(New("test")())(), nil
+	},
 }

@@ -14,9 +14,7 @@ linters:
     - predeclared
     - staticcheck
     - unconvert
-    - unparam
     - unused
-    - usetesting
   exclusions:
     generated: lax
     presets:
