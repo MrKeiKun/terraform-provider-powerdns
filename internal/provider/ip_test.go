@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestValidateCIDR(t *testing.T) {
+func TestIP_ValidateCIDR(t *testing.T) {
 	tests := []struct {
 		name        string
 		input       interface{}
@@ -87,7 +87,7 @@ func TestValidateCIDR(t *testing.T) {
 	}
 }
 
-func TestParsePTRRecordName(t *testing.T) {
+func TestIP_ParsePTRRecordName(t *testing.T) {
 	tests := []struct {
 		name        string
 		input       string
@@ -102,7 +102,7 @@ func TestParsePTRRecordName(t *testing.T) {
 		},
 		{
 			name:        "valid IPv6 PTR",
-			input:       "b.a.9.8.7.6.5.4.3.2.1.0.f.e.d.c.b.a.9.8.ip6.arpa.",
+			input:       "1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa.",
 			expected:    net.ParseIP("2001:db8::1"),
 			expectError: false,
 		},
@@ -137,7 +137,7 @@ func TestParsePTRRecordName(t *testing.T) {
 	}
 }
 
-func TestGetPTRRecordName(t *testing.T) {
+func TestIP_GetPTRRecordName(t *testing.T) {
 	tests := []struct {
 		name        string
 		input       string
@@ -177,7 +177,7 @@ func TestGetPTRRecordName(t *testing.T) {
 	}
 }
 
-func TestParseReverseZoneName(t *testing.T) {
+func TestIP_ParseReverseZoneName(t *testing.T) {
 	tests := []struct {
 		name        string
 		input       string
@@ -239,7 +239,7 @@ func TestParseReverseZoneName(t *testing.T) {
 	}
 }
 
-func TestGetReverseZoneName(t *testing.T) {
+func TestIP_GetReverseZoneName(t *testing.T) {
 	tests := []struct {
 		name        string
 		input       string

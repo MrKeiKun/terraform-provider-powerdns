@@ -103,6 +103,19 @@ In order to run local provider tests, you can simply run `make test`.
 $ make test
 ```
 
+### Test Naming Convention
+
+The provider follows a clear naming convention to distinguish between unit tests and acceptance tests:
+
+- **Unit Tests**: Named as `Test<Component>_<Method>` (e.g., `TestIP_ValidateCIDR`, `TestClient_New`)
+  - These test individual functions and methods without external dependencies
+  - Run with: `go test -run "^Test[^A].*"`
+
+- **Acceptance Tests**: Named as `TestAcc<Component>_<Method>` (e.g., `TestAccPDNSZoneNative`, `TestAccRecordResource`)
+  - These test full integration with PowerDNS servers
+  - Require `TF_ACC=1` environment variable to run
+  - Run with: `go test -run "^TestAcc.*"`
+
 For running acceptance tests locally, you'll need to use `docker-compose` to prepare the test environment:
 
 ```sh

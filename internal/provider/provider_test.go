@@ -37,7 +37,7 @@ func TestAccProvider_Configure(t *testing.T) {
 	})
 }
 
-func TestGetConfigValueWithEnvFallback(t *testing.T) {
+func TestProvider_GetConfigValueWithEnvFallback(t *testing.T) {
 	// Set up environment variable
 	os.Setenv("TEST_ENV_VAR", "env-value")
 	defer os.Unsetenv("TEST_ENV_VAR")
@@ -78,7 +78,7 @@ func TestGetConfigValueWithEnvFallback(t *testing.T) {
 	}
 }
 
-func TestGetConfigBoolWithEnvFallback(t *testing.T) {
+func TestProvider_GetConfigBoolWithEnvFallback(t *testing.T) {
 	// Set up environment variables
 	os.Setenv("TEST_BOOL_TRUE", "true")
 	os.Setenv("TEST_BOOL_FALSE", "false")
@@ -141,7 +141,7 @@ func TestGetConfigBoolWithEnvFallback(t *testing.T) {
 	}
 }
 
-func TestGetConfigIntWithEnvFallback(t *testing.T) {
+func TestProvider_GetConfigIntWithEnvFallback(t *testing.T) {
 	// Set up environment variables
 	os.Setenv("TEST_INT_42", "42")
 	os.Setenv("TEST_INT_INVALID", "invalid")

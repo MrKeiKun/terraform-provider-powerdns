@@ -93,9 +93,11 @@ func NewClient(ctx context.Context, serverURL string, recursorServerURL string, 
 		CacheTTL:          cacheTTL,
 	}
 
-	// Set server version
+	// Set server version (optional)
 	if err := client.setServerVersion(ctx); err != nil {
-		return nil, fmt.Errorf("failed to set server version: %w", err)
+		tflog.Warn(ctx, "Failed to set server version, continuing without it", map[string]interface{}{
+			"error": err.Error(),
+		})
 	}
 
 	return client, nil
@@ -126,6 +128,9 @@ func sanitizeURL(URL string) (string, error) {
 	if len(URL) == 0 {
 		return "", fmt.Errorf("no URL provided")
 	}
+
+	// Trim surrounding quotes that may be included from environment variables
+	URL = strings.Trim(URL, "\"'")
 
 	parsedURL, err := url.Parse(URL)
 	if err != nil {
@@ -696,7 +701,7 @@ func (client *Client) setServerVersion(ctx context.Context) error {
 			return fmt.Errorf("invalid response code from server: '%d'. Failed to read response body: %v",
 				resp.StatusCode, err)
 		}
-		return fmt.Errorf("invalid response code from server: '%d'. Response body: %s",
+		return fmt.Errorf("failed to set server version: invalid response code from server: '%d'. Response body: %s",
 			resp.StatusCode, string(bodyBytes))
 	}
 

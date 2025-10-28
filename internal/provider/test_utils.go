@@ -5,6 +5,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
 func testAccPreCheck(t *testing.T) {
@@ -17,3 +18,5 @@ var testAccProtoV6ProviderFactories = map[string]func() (tfprotov6.ProviderServe
 		return providerserver.NewProtocol6(New("test")())(), nil
 	},
 }
+
+var testAccProvider terraform.ResourceState

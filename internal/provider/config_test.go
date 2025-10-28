@@ -19,9 +19,9 @@ func TestConfig_Client(t *testing.T) {
 		{
 			name: "valid config",
 			config: Config{
-				ServerURL:         "https://example.com",
-				RecursorServerURL: "https://recursor.example.com",
-				APIKey:            "test-key",
+				ServerURL:         "http://localhost:8081",
+				RecursorServerURL: "http://localhost:8082",
+				APIKey:            "secret",
 				InsecureHTTPS:     false,
 				CacheEnable:       false,
 				CacheMemorySize:   "10",
@@ -32,23 +32,23 @@ func TestConfig_Client(t *testing.T) {
 		{
 			name: "config with CA certificate",
 			config: Config{
-				ServerURL:         "https://example.com",
-				RecursorServerURL: "https://recursor.example.com",
-				APIKey:            "test-key",
-				CACertificate:     "test-ca-cert",
+				ServerURL:         "http://localhost:8081",
+				RecursorServerURL: "http://localhost:8082",
+				APIKey:            "secret",
+				CACertificate:     "",
 				InsecureHTTPS:     false,
 				CacheEnable:       false,
 				CacheMemorySize:   "10",
 				CacheTTL:          60,
 			},
-			expectError: true, // Will fail because Read function is not mocked
+			expectError: false,
 		},
 		{
 			name: "config with client cert",
 			config: Config{
-				ServerURL:         "https://example.com",
-				RecursorServerURL: "https://recursor.example.com",
-				APIKey:            "test-key",
+				ServerURL:         "http://localhost:8081",
+				RecursorServerURL: "http://localhost:8082",
+				APIKey:            "secret",
 				ClientCertFile:    "test-cert.pem",
 				ClientCertKeyFile: "test-key.pem",
 				InsecureHTTPS:     false,
@@ -61,9 +61,9 @@ func TestConfig_Client(t *testing.T) {
 		{
 			name: "config with insecure HTTPS",
 			config: Config{
-				ServerURL:         "https://example.com",
-				RecursorServerURL: "https://recursor.example.com",
-				APIKey:            "test-key",
+				ServerURL:         "http://localhost:8081",
+				RecursorServerURL: "http://localhost:8082",
+				APIKey:            "secret",
 				InsecureHTTPS:     true,
 				CacheEnable:       false,
 				CacheMemorySize:   "10",

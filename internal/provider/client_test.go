@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewClient(t *testing.T) {
+func TestClient_New(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
@@ -24,9 +24,9 @@ func TestNewClient(t *testing.T) {
 	}{
 		{
 			name:              "valid client creation",
-			serverURL:         "https://example.com",
-			recursorServerURL: "https://recursor.example.com",
-			apiKey:            "test-key",
+			serverURL:         "http://localhost:8081",
+			recursorServerURL: "http://localhost:8082",
+			apiKey:            "secret",
 			cacheEnable:       false,
 			cacheSizeMB:       "10",
 			cacheTTL:          60,
@@ -85,7 +85,7 @@ func TestNewClient(t *testing.T) {
 	}
 }
 
-func TestParseCacheSizeMB(t *testing.T) {
+func TestClient_ParseCacheSizeMB(t *testing.T) {
 	tests := []struct {
 		name        string
 		cacheSizeMB string
@@ -124,7 +124,7 @@ func TestParseCacheSizeMB(t *testing.T) {
 	}
 }
 
-func TestSanitizeURL(t *testing.T) {
+func TestClient_SanitizeURL(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
@@ -182,7 +182,7 @@ func TestSanitizeURL(t *testing.T) {
 	}
 }
 
-func TestRecord_ID(t *testing.T) {
+func TestClient_Record_ID(t *testing.T) {
 	record := Record{
 		Name: "example.com",
 		Type: "A",
@@ -192,7 +192,7 @@ func TestRecord_ID(t *testing.T) {
 	assert.Equal(t, expected, record.ID())
 }
 
-func TestResourceRecordSet_ID(t *testing.T) {
+func TestClient_ResourceRecordSet_ID(t *testing.T) {
 	rrSet := ResourceRecordSet{
 		Name: "example.com",
 		Type: "A",
@@ -202,7 +202,7 @@ func TestResourceRecordSet_ID(t *testing.T) {
 	assert.Equal(t, expected, rrSet.ID())
 }
 
-func TestParseID(t *testing.T) {
+func TestClient_ParseID(t *testing.T) {
 	tests := []struct {
 		name         string
 		input        string

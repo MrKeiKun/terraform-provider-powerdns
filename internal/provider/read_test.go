@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRead(t *testing.T) {
+func TestRead_Read(t *testing.T) {
 	// Create a temporary file for testing
 	tempDir := t.TempDir()
 	tempFile := filepath.Join(tempDir, "test.txt")
