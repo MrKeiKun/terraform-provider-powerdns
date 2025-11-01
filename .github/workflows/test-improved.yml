@@ -1,0 +1,244 @@
+name: Test (Improved)
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test and Coverage
+    runs-on: ubuntu-latest
+    services:
+      # Use docker service to run containers with health check
+      docker:
+        image: docker:27-dind
+        options: >-
+          --privileged
+          --health-cmd="docker info"
+          --health-interval=30s
+          --health-timeout=30s
+          --health-retries=5
+          --health-start-period=120s
+        volumes:
+          - dind-storage:/var/lib/docker
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Install Docker Compose
+        run: |
+          DOCKER_COMPOSE_VERSION="2.29.7"
+          curl -L "https://github.com/docker/compose/releases/download/v${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          chmod +x /usr/local/bin/docker-compose
+          docker-compose --version
+
+      - name: Wait for Docker daemon to be ready
+        run: |
+          echo "Waiting for Docker daemon to be healthy..."
+          timeout=300
+          elapsed=0
+          while ! docker info > /dev/null 2>&1; do
+            if [ $elapsed -ge $timeout ]; then
+              echo "Docker daemon failed to start within $timeout seconds"
+              docker info
+              exit 1
+            fi
+            echo "Waiting for Docker daemon... ($elapsed/$timeout seconds)"
+            sleep 5
+            elapsed=$((elapsed + 5))
+          done
+          echo "Docker daemon is ready!"
+          docker info
+
+      - name: Build provider binary
+        run: |
+          echo "Building provider binary..."
+          go build -o terraform-provider-powerdns .
+          ls -la terraform-provider-powerdns*
+
+      - name: Start PowerDNS with Docker Compose (with retry)
+        run: |
+          echo "Starting PowerDNS services..."
+          # Clean start - remove any existing containers and volumes
+          docker-compose -f docker-compose.yml down -v --remove-orphans || true
+
+          # Ensure init script has execute permissions
+          chmod +x test/init-pdns-auth.sh
+
+          # Retry logic for starting services
+          max_attempts=3
+          attempt=1
+          
+          while [ $attempt -le $max_attempts ]; do
+            echo "Starting PowerDNS services (attempt $attempt/$max_attempts)..."
+            
+            # Start PowerDNS services in background with timeout
+            if timeout 120 docker-compose -f docker-compose.yml up -d; then
+              echo "PowerDNS services started successfully"
+              break
+            else
+              echo "Failed to start PowerDNS services (attempt $attempt/$max_attempts)"
+              if [ $attempt -eq $max_attempts ]; then
+                echo "All start attempts failed"
+                docker-compose -f docker-compose.yml logs
+                exit 1
+              fi
+              echo "Waiting 30 seconds before retry..."
+              sleep 30
+              attempt=$((attempt + 1))
+            fi
+          done
+
+      - name: Wait for PowerDNS services with exponential backoff
+        run: |
+          echo "Waiting for PowerDNS services to be ready..."
+          
+          # Wait for PowerDNS Authoritative Server
+          echo "Checking PowerDNS Authoritative Server..."
+          max_attempts=20
+          attempt=1
+          backoff=5
+          
+          while [ $attempt -le $max_attempts ]; do
+            if curl -f --max-time 10 http://localhost:8081/api -H "X-API-Key: secret" > /dev/null 2>&1; then
+              echo "PowerDNS Authoritative Server is ready!"
+              break
+            fi
+            
+            if [ $attempt -eq $max_attempts ]; then
+              echo "PowerDNS Authoritative Server failed to start after $max_attempts attempts"
+              echo "=== PowerDNS Authoritative Container Logs ==="
+              docker-compose -f docker-compose.yml logs pdns-auth
+              exit 1
+            fi
+            
+            echo "PowerDNS Authoritative Server not ready yet, waiting ${backoff}s before retry... (attempt $attempt/$max_attempts)"
+            sleep $backoff
+            attempt=$((attempt + 1))
+            backoff=$((backoff * 2))
+            if [ $backoff -gt 60 ]; then
+              backoff=60
+            fi
+          done
+
+          # Wait for PowerDNS Recursor
+          echo "Checking PowerDNS Recursor..."
+          max_attempts=20
+          attempt=1
+          backoff=5
+          
+          while [ $attempt -le $max_attempts ]; do
+            if curl -f --max-time 10 http://localhost:8082/api -H "X-API-Key: secret" > /dev/null 2>&1; then
+              echo "PowerDNS Recursor is ready!"
+              break
+            fi
+            
+            if [ $attempt -eq $max_attempts ]; then
+              echo "PowerDNS Recursor failed to start after $max_attempts attempts"
+              echo "=== PowerDNS Recursor Container Logs ==="
+              docker-compose -f docker-compose.yml logs pdns-rec
+              echo "=== PowerDNS Authoritative Container Logs ==="
+              docker-compose -f docker-compose.yml logs pdns-auth
+              exit 1
+            fi
+            
+            echo "PowerDNS Recursor not ready yet, waiting ${backoff}s before retry... (attempt $attempt/$max_attempts)"
+            sleep $backoff
+            attempt=$((attempt + 1))
+            backoff=$((backoff * 2))
+            if [ $backoff -gt 60 ]; then
+              backoff=60
+            fi
+          done
+
+          # Final verification
+          echo "Final verification of PowerDNS APIs..."
+          auth_response=$(curl -s --max-time 10 http://localhost:8081/api/v1/servers -H "X-API-Key: secret" | head -c 100)
+          rec_response=$(curl -s --max-time 10 http://localhost:8082/api -H "X-API-Key: secret" | head -c 100)
+          
+          echo "PowerDNS Auth response (first 100 chars): $auth_response"
+          echo "PowerDNS Rec response (first 100 chars): $rec_response"
+          
+          if [ -z "$auth_response" ] || [ -z "$rec_response" ]; then
+            echo "One or both PowerDNS APIs returned empty responses"
+            exit 1
+          fi
+
+      - name: Run unit tests with coverage
+        run: |
+          echo "Running unit tests with coverage..."
+          go test -v -coverprofile=unit-coverage.out -covermode=atomic $(go list ./... | grep -v 'vendor')
+
+      - name: Run acceptance tests with coverage
+        run: |
+          # Set environment variables for acceptance tests
+          export PDNS_SERVER_URL="http://localhost:8081"
+          export PDNS_API_KEY="secret"
+          export PDNS_RECURSOR_SERVER_URL="http://localhost:8082"
+          export TF_ACC=1
+
+          # Run acceptance tests with coverage
+          echo "Running acceptance tests with coverage..."
+          timeout 25m go test -v -coverprofile=acceptance-coverage.out -covermode=atomic $(go list ./... | grep -v 'vendor') -parallel=3 -timeout=120m
+
+      - name: Merge coverage profiles
+        run: |
+          # Install gocovmerge if coverage files exist
+          if [ -f "unit-coverage.out" ] || [ -f "acceptance-coverage.out" ]; then
+            go install github.com/wadey/gocovmerge@latest
+            
+            # Create merged coverage file
+            gocovmerge unit-coverage.out acceptance-coverage.out > coverage.out
+            
+            # Show coverage summary
+            go tool cover -func=coverage.out
+          else
+            echo "No coverage files found to merge"
+          fi
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5.5.1
+        with:
+          files: ./coverage.out
+          flags: tests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+          verbose: true
+
+      - name: Upload test logs on failure
+        if: failure()
+        run: |
+          echo "=== Docker Compose Logs ==="
+          docker-compose -f docker-compose.yml logs --tail=100
+          echo "=== PowerDNS Authoritative Container Logs ==="
+          docker-compose -f docker-compose.yml logs --tail=100 pdns-auth
+          echo "=== PowerDNS Recursor Container Logs ==="
+          docker-compose -f docker-compose.yml logs --tail=100 pdns-rec
+          echo "=== Docker Container Status ==="
+          docker-compose -f docker-compose.yml ps -a
+          echo "=== Docker System Status ==="
+          docker system df
+          docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+      - name: Cleanup with better error handling
+        if: always()
+        run: |
+          echo "Cleaning up resources..."
+          
+          # Stop services with timeout
+          timeout 60 docker-compose -f docker-compose.yml down -v --remove-orphans || true
+          
+          # Additional cleanup to ensure no hanging resources
+          echo "Performing additional cleanup..."
+          docker container prune -f || true
+          docker network prune -f || true
+          docker volume prune -f || true
+          docker system prune -f || true
