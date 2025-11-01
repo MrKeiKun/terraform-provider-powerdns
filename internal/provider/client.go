@@ -254,8 +254,8 @@ type RecursorZoneCreate struct {
 	Name             string   `json:"name"`
 	Kind             string   `json:"kind"`
 	Servers          []string `json:"servers"`
-	RecursionDesired bool     `json:"recursion_desired,omitempty"`
-	NotifyAllowed    bool     `json:"notify_allowed,omitempty"`
+	RecursionDesired bool     `json:"recursion_desired"`
+	NotifyAllowed    bool     `json:"notify_allowed"`
 }
 
 // ZoneInfo represents a PowerDNS zone object.
