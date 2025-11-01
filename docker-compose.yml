@@ -20,8 +20,9 @@ services:
       - "--webserver-allow-from=0.0.0.0/0"
       - "--api-key=secret"
       - "--api-config-dir=/etc/powerdns/recursor"
-      - "--loglevel=6"
+      - "--loglevel=9"
       - "--disable-syslog=yes"
+      - "--trace=yes"
     ports:
       - "8082:8082"
     volumes:
