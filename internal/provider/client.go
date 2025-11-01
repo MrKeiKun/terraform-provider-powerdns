@@ -207,8 +207,7 @@ func (client *Client) newRequest(ctx context.Context, method string, endpoint st
 
 // Creates a new request for recursor API.
 func (client *Client) newRequestRecursor(ctx context.Context, method string, endpoint string, body []byte) (*http.Request, error) {
-	var urlStr string
-	urlStr = client.RecursorServerURL + "/api/v1" + endpoint
+	var urlStr string = client.RecursorServerURL + "/api/v1" + endpoint
 
 	u, err := url.Parse(urlStr)
 	if err != nil {
