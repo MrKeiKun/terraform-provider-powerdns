@@ -40,35 +40,11 @@ jobs:
           # Clean start - remove any existing containers and volumes
           docker-compose down -v --remove-orphans || true
 
+          # Ensure init script has execute permissions
+          chmod +x test/init-pdns-auth.sh
+
           # Start PowerDNS services in background
           docker-compose up -d
-
-          # Wait for PostgreSQL to be ready with retry logic
-          echo "Waiting for PostgreSQL to be ready..."
-          max_attempts=15
-          attempt=1
-
-          while [ $attempt -le $max_attempts ]; do
-            echo "Attempt $attempt/$max_attempts: Checking PostgreSQL readiness..."
-
-            if docker-compose exec -T postgres psql -U powerdns -d powerdns -c "SELECT 1;" > /dev/null 2>&1; then
-              echo "PostgreSQL is ready!"
-              # Additional check to ensure PostgreSQL is fully ready
-              sleep 5
-              break
-            fi
-
-            if [ $attempt -eq $max_attempts ]; then
-              echo "PostgreSQL failed to start after $max_attempts attempts"
-              echo "=== PostgreSQL Container Logs ==="
-              docker-compose logs postgres
-              exit 1
-            fi
-
-            echo "PostgreSQL not ready yet, waiting 20 seconds before retry..."
-            sleep 20
-            attempt=$((attempt + 1))
-          done
 
           # Wait for PowerDNS to be ready with retry logic
           echo "Waiting for PowerDNS to be ready..."
@@ -89,8 +65,6 @@ jobs:
               echo "PowerDNS failed to start after $max_attempts attempts"
               echo "=== PowerDNS Container Logs ==="
               docker-compose logs pdns-auth
-              echo "=== PostgreSQL Container Logs ==="
-              docker-compose logs postgres
               exit 1
             fi
 
@@ -129,8 +103,6 @@ jobs:
                docker-compose logs pdns-rec
                echo "=== PowerDNS Container Logs ==="
                docker-compose logs pdns-auth
-               echo "=== PostgreSQL Container Logs ==="
-               docker-compose logs postgres
                exit 1
              fi
 
@@ -187,8 +159,8 @@ jobs:
           docker-compose logs --tail=100
           echo "=== PowerDNS Container Logs ==="
           docker-compose logs --tail=100 pdns-auth
-          echo "=== PostgreSQL Container Logs ==="
-          docker-compose logs --tail=100 postgres
+          echo "=== PowerDNS Recursor Container Logs ==="
+          docker-compose logs --tail=100 pdns-rec
           echo "=== Docker Container Status ==="
           docker-compose ps -a
           echo "=== Docker Images ==="
