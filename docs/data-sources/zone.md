@@ -73,12 +73,10 @@ This resource exports the following attributes in addition to the arguments abov
 - `nameservers` - Set of nameservers for this zone (Master zones only).
 - `masters` - Set of master servers for this zone (Slave zones only).
 - `soa_edit_api` - SOA edit API setting.
-- `records` - List of all DNS records in the zone. Each record has the following attributes:
-  - `name` - The name of the record.
-  - `type` - The type of the record (A, AAAA, CNAME, MX, etc.).
-  - `content` - The content of the record.
-  - `ttl` - The TTL of the record.
-  - `disabled` (bool) Whether the record is disabled.
+- `records` - List of all DNS records in the zone as formatted strings. Each record follows the format: `name ttl type content`.
+  For example: `www.example.com. 300 A 192.168.1.1`
+  - The format is: `<record_name> <ttl> <record_type> <record_content>`
+  - Multiple records are returned as a list of these formatted strings
 
 ## Notes
 
@@ -86,4 +84,3 @@ This resource exports the following attributes in addition to the arguments abov
 - The `records` attribute provides access to all DNS records within the zone, allowing you to filter and process them as needed.
 - For Slave zones, the `nameservers` attribute will be empty and `masters` will contain the list of master servers.
 - For Master zones, the `masters` attribute will be empty and `nameservers` will contain the list of nameservers.
-

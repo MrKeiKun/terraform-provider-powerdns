@@ -65,6 +65,7 @@ Clone the provider repository:
 
 ```sh
 $ git clone git@github.com:MrKeiKun/terraform-provider-powerdns.git
+```
 
 Navigate to repository directory:
 
