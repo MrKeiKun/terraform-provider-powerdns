@@ -252,7 +252,6 @@ type RecursorZone struct {
 // Based on PowerDNS Recursor API documentation for forwarding zones.
 type RecursorZoneCreate struct {
 	Name             string   `json:"name"`
-	Type             string   `json:"type"`
 	Kind             string   `json:"kind"`
 	Servers          []string `json:"servers"`
 	RecursionDesired bool     `json:"recursion_desired"`
@@ -791,7 +790,6 @@ func (client *Client) CreateRecursorZone(ctx context.Context, zone RecursorZone)
 	// Convert to creation struct to avoid sending read-only fields
 	zoneCreate := RecursorZoneCreate{
 		Name:             zone.Name,
-		Type:             zone.Type,
 		Kind:             zone.Kind,
 		Servers:          zone.Servers,
 		RecursionDesired: zone.RecursionDesired,
@@ -813,7 +811,6 @@ func (client *Client) UpdateRecursorZone(ctx context.Context, zoneName string, z
 	// Convert to creation struct to avoid sending read-only fields
 	zoneUpdate := RecursorZoneCreate{
 		Name:             zone.Name,
-		Type:             zone.Type,
 		Kind:             zone.Kind,
 		Servers:          zone.Servers,
 		RecursionDesired: zone.RecursionDesired,

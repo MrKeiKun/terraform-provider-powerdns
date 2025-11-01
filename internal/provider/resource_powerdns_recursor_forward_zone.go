@@ -126,7 +126,6 @@ func (r *RecursorForwardZoneResource) Create(ctx context.Context, req resource.C
 	// Create the zone
 	recursorZone := RecursorZone{
 		Name:             zoneName,
-		Type:             "Zone",
 		Kind:             "Forwarded",
 		Servers:          servers,
 		RecursionDesired: recursionDesired,
@@ -249,7 +248,6 @@ func (r *RecursorForwardZoneResource) Update(ctx context.Context, req resource.U
 	// Recreate the zone with updated settings
 	updateData := RecursorZone{
 		Name:             zoneName,
-		Type:             "Zone",
 		Kind:             "Forwarded",
 		Servers:          servers,
 		RecursionDesired: recursionDesired,
