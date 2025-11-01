@@ -1,1 +1,6 @@
-{}
+{"localhost": {
+  "url": "/api/v1/servers/localhost/zones",
+  "password": "",
+  "api-key": "secret",
+  "apiconnector": "HTTP"
+}}

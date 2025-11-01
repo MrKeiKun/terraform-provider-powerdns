@@ -254,8 +254,8 @@ type RecursorZoneCreate struct {
 	Name             string   `json:"name"`
 	Kind             string   `json:"kind"`
 	Servers          []string `json:"servers"`
-	RecursionDesired bool     `json:"recursion_desired"`
-	NotifyAllowed    bool     `json:"notify_allowed"`
+	RecursionDesired bool     `json:"recursion_desired,omitempty"`
+	NotifyAllowed    bool     `json:"notify_allowed,omitempty"`
 }
 
 // ZoneInfo represents a PowerDNS zone object.
@@ -800,6 +800,15 @@ func (client *Client) CreateRecursorZone(ctx context.Context, zone RecursorZone)
 	if err != nil {
 		return RecursorZone{}, err
 	}
+
+	tflog.Info(ctx, "Creating recursor zone", map[string]interface{}{
+		"name":              zone.Name,
+		"kind":              zone.Kind,
+		"servers":           strings.Join(zone.Servers, ","),
+		"recursion_desired": zone.RecursionDesired,
+		"notify_allowed":    zone.NotifyAllowed,
+		"body":              string(body),
+	})
 
 	var createdZone RecursorZone
 	err = client.doRequestRecursor(ctx, methodPost, "/servers/localhost/zones", body, http.StatusCreated, &createdZone)
