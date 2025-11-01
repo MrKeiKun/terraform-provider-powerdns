@@ -1,72 +1,32 @@
 services:
-  postgres:
-    image: postgres:15
-    environment:
-      POSTGRES_DB: powerdns
-      POSTGRES_USER: powerdns
-      POSTGRES_PASSWORD: secret
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U powerdns -d powerdns"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    volumes:
-      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
-    restart: unless-stopped
-
   pdns-auth:
     image: powerdns/pdns-auth-50
-    command:
-      - "--api"
-      - "--api-key=secret"
-      - "--webserver"
-      - "--webserver-address=0.0.0.0"
-      - "--webserver-allow-from=0.0.0.0/0"
-      - "--loglevel=6"
-      - "--disable-syslog=yes"
-      - "--launch=gpgsql"
-    environment:
-      - POSTGRES_HOST=postgres
-      - POSTGRES_USER=powerdns
-      - POSTGRES_PASS=secret
-      - POSTGRES_DB=powerdns
-    depends_on:
-      postgres:
-        condition: service_healthy
+    user: root
     ports:
       - "8081:8081"
     volumes:
-      - ./pdns-auth.conf/pdns.conf:/etc/powerdns/pdns.conf
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/api", "-H", "X-API-Key: secret"]
-      interval: 15s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
+      - lmdb_test_data:/data
+      - ./test/pdns.conf:/etc/powerdns/pdns.conf
+      - ./test/init-pdns-auth.sh:/usr/local/bin/init-pdns-auth.sh
+    entrypoint: /usr/local/bin/init-pdns-auth.sh
     restart: unless-stopped
 
   pdns-rec:
     image: powerdns/pdns-recursor-53
     command:
-      - --webserver=yes
-      - --webserver-address=0.0.0.0
-      - --webserver-port=8082
-      - --webserver-allow-from=0.0.0.0/0
-      - --api-key=secret
-      - --loglevel=6
-      - --disable-syslog=yes
+      - "--webserver=yes"
+      - "--webserver-address=0.0.0.0"
+      - "--webserver-port=8082"
+      - "--webserver-allow-from=0.0.0.0/0"
+      - "--api-key=secret"
+      - "--api-config-dir=/etc/powerdns/recursor"
+      - "--loglevel=6"
+      - "--disable-syslog=yes"
     ports:
       - "8082:8082"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8082/api", "-H", "X-API-Key: secret"]
-      interval: 15s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
+    volumes:
+      - ./test`/recursor-config:/etc/powerdns/recursor
     restart: unless-stopped
+
+volumes:
+  lmdb_test_data:
