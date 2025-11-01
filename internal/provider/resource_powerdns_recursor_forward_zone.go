@@ -191,9 +191,7 @@ func (r *RecursorForwardZoneResource) Read(ctx context.Context, req resource.Rea
 	var serversList []types.String
 	for _, s := range zone.Servers {
 		// Remove default port :53 if present to match user input
-		if strings.HasSuffix(s, ":53") {
-			s = strings.TrimSuffix(s, ":53")
-		}
+		s = strings.TrimSuffix(s, ":53")
 		serversList = append(serversList, types.StringValue(s))
 	}
 	data.Servers, _ = types.ListValueFrom(ctx, types.StringType, serversList)

@@ -91,25 +91,6 @@ func TestAccPDNSRecursorForwardZone_update(t *testing.T) {
 	})
 }
 
-func testAccCheckPDNSRecursorForwardZoneDestroy(s *terraform.State) error {
-	// Since we're in acceptance testing mode, we don't have direct access to the client
-	// In a real implementation, this would use the provider client to verify
-	// that the forward zone no longer exists on the PowerDNS recursor server
-	//
-	// For now, we'll do a basic validation that the resource state is empty
-	for _, rs := range s.RootModule().Resources {
-		if rs.Type != "powerdns_recursor_forward_zone" {
-			continue
-		}
-
-		// If we still have a primary ID, the destroy might have failed
-		if rs.Primary.ID != "" {
-			return fmt.Errorf("forward zone %s still exists in state after destroy", rs.Primary.ID)
-		}
-	}
-	return nil
-}
-
 func testAccCheckPDNSRecursorForwardZoneExists(n string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		_, ok := s.RootModule().Resources[n]
