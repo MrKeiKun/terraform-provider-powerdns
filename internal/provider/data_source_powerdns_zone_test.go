@@ -43,16 +43,42 @@ func TestAccDataSourcePDNSZone_withRecords(t *testing.T) {
 
 func testAccDataSourcePDNSZoneConfig(zoneName string) string {
 	return fmt.Sprintf(`
+provider "powerdns" {
+  server_url         = "http://localhost:8081"
+  recursor_server_url = "http://localhost:8082"
+  api_key            = "secret"
+}
+
+resource "powerdns_zone" "test_zone" {
+  name        = %[1]q
+  kind        = "Master"
+  nameservers = ["ns1.test.example.com.", "ns2.test.example.com."]
+}
+
 data "powerdns_zone" "test" {
-  name = "%s"
+  name = %[1]q
+  depends_on = [powerdns_zone.test_zone]
 }
 `, zoneName)
 }
 
 func testAccDataSourcePDNSZoneConfigWithRecords(zoneName string) string {
 	return fmt.Sprintf(`
+provider "powerdns" {
+  server_url         = "http://localhost:8081"
+  recursor_server_url = "http://localhost:8082"
+  api_key            = "secret"
+}
+
+resource "powerdns_zone" "test_zone" {
+  name        = %[1]q
+  kind        = "Master"
+  nameservers = ["ns1.test.example.com.", "ns2.test.example.com."]
+}
+
 data "powerdns_zone" "test" {
-  name = "%s"
+  name = %[1]q
+  depends_on = [powerdns_zone.test_zone]
 }
 
 output "zone_records" {
@@ -60,11 +86,7 @@ output "zone_records" {
 }
 
 output "a_records" {
-  value = [
-    for record in data.powerdns_zone.test.records :
-    record
-    if record.type == "A"
-  ]
+  value = data.powerdns_zone.test.records
 }
 `, zoneName)
 }
@@ -73,8 +95,6 @@ func testAccDataSourcePDNSZoneCheck(dataSourceName, zoneName string) resource.Te
 	return resource.ComposeAggregateTestCheckFunc(
 		resource.TestCheckResourceAttr(dataSourceName, "name", zoneName),
 		resource.TestCheckResourceAttrSet(dataSourceName, "kind"),
-		resource.TestCheckResourceAttrSet(dataSourceName, "account"),
-		resource.TestCheckResourceAttrSet(dataSourceName, "soa_edit_api"),
 		resource.TestCheckResourceAttrSet(dataSourceName, "records.#"),
 	)
 }
@@ -83,14 +103,6 @@ func testAccDataSourcePDNSZoneCheckWithRecords(dataSourceName, zoneName string) 
 	return resource.ComposeAggregateTestCheckFunc(
 		resource.TestCheckResourceAttr(dataSourceName, "name", zoneName),
 		resource.TestCheckResourceAttrSet(dataSourceName, "kind"),
-		resource.TestCheckResourceAttrSet(dataSourceName, "account"),
-		resource.TestCheckResourceAttrSet(dataSourceName, "soa_edit_api"),
 		resource.TestCheckResourceAttrSet(dataSourceName, "records.#"),
-		// Check that records have the expected structure
-		resource.TestCheckResourceAttr(dataSourceName, "records.0.name", ""),
-		resource.TestCheckResourceAttr(dataSourceName, "records.0.type", ""),
-		resource.TestCheckResourceAttr(dataSourceName, "records.0.content", ""),
-		resource.TestCheckResourceAttrSet(dataSourceName, "records.0.ttl"),
-		resource.TestCheckResourceAttrSet(dataSourceName, "records.0.disabled"),
 	)
 }

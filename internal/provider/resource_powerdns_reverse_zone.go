@@ -8,9 +8,39 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
+
+// CIDRValidator implements a custom validator for CIDR format.
+type CIDRValidator struct{}
+
+func (v CIDRValidator) Description(ctx context.Context) string {
+	return "Validates CIDR format according to PowerDNS reverse zone requirements"
+}
+
+func (v CIDRValidator) MarkdownDescription(ctx context.Context) string {
+	return "Validates CIDR format according to PowerDNS reverse zone requirements"
+}
+
+func (v CIDRValidator) ValidateString(ctx context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	cidr := req.ConfigValue.ValueString()
+
+	// Use the existing ValidateCIDR function
+	_, errors := ValidateCIDR(cidr, "cidr")
+	if len(errors) > 0 {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid CIDR",
+			fmt.Sprintf("Invalid CIDR format: %v", errors[0]),
+		)
+	}
+}
 
 // Ensure the implementation satisfies the expected interfaces.
 var _ resource.Resource = &ReverseZoneResource{}
@@ -39,6 +69,9 @@ func (r *ReverseZoneResource) Schema(ctx context.Context, req resource.SchemaReq
 			"cidr": schema.StringAttribute{
 				MarkdownDescription: "The CIDR block for the reverse zone",
 				Required:            true,
+				Validators: []validator.String{
+					CIDRValidator{},
+				},
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},

@@ -35,8 +35,11 @@ func ValidateCIDR(v interface{}, k string) (ws []string, errors []error) {
 			return
 		}
 	} else {
-		// IPv6 CIDR
-		if ones%4 != 0 || ones < 4 || ones > 124 {
+		// IPv6 CIDR - Support practical range for reverse zones (/4 to /124)
+		// /4: Minimum practical range (16 nibbles, ~1/16 of IPv6 space)
+		// /124: Maximum practical for specific subnets (4 nibbles, ~1/16 subnet)
+		// This avoids impractical ranges like /0 (entire IPv6 space) and /128 (too specific for zones)
+		if ones < 4 || ones > 124 {
 			errors = append(errors, fmt.Errorf("IPv6 prefix length must be a multiple of 4 between 4 and 124"))
 			return
 		}

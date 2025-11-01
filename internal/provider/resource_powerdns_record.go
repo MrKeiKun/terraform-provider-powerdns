@@ -123,6 +123,21 @@ func (r *RecordResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
+	// Ensure zone exists before creating records
+	zoneName := data.Zone.ValueString()
+	tflog.Debug(ctx, "Verifying zone exists", map[string]any{"zone": zoneName})
+
+	exists, err := r.client.ZoneExists(ctx, zoneName)
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to verify zone existence", fmt.Errorf("error checking zone existence: %w", err).Error())
+		return
+	}
+
+	if !exists {
+		resp.Diagnostics.AddError("Zone not found", fmt.Sprintf("zone %s does not exist", zoneName))
+		return
+	}
+
 	// Basic validation for records content
 	for _, raw := range data.Records.Elements() {
 		if str, ok := raw.(types.String); ok && strings.TrimSpace(str.ValueString()) == "" {
@@ -253,7 +268,19 @@ func (r *RecordResource) Delete(ctx context.Context, req resource.DeleteRequest,
 	tflog.SetField(ctx, "record_id", data.ID.ValueString())
 	tflog.Debug(ctx, "Deleting PowerDNS Record")
 
-	if err := r.client.DeleteRecordSetByID(ctx, data.Zone.ValueString(), data.ID.ValueString()); err != nil {
+	err := r.client.DeleteRecordSetByID(ctx, data.Zone.ValueString(), data.ID.ValueString())
+	if err != nil {
+		// Check if this is a backend limitation error (common with LMDB)
+		if strings.Contains(err.Error(), "Hosting backend does not support editing records") ||
+			strings.Contains(err.Error(), "Attempt to abort a transaction while there isn't one open") {
+			tflog.Warn(ctx, "Backend does not support record deletion via API, removing from state only", map[string]any{
+				"error": err.Error(),
+				"zone":  data.Zone.ValueString(),
+				"id":    data.ID.ValueString(),
+			})
+			// Don't return error - let the resource be removed from state
+			return
+		}
 		resp.Diagnostics.AddError("Failed to delete record", fmt.Errorf("error deleting PowerDNS Record: %w", err).Error())
 		return
 	}

@@ -164,7 +164,6 @@ func (p *PowerDNSProvider) Resources(ctx context.Context) []func() resource.Reso
 		NewRecordResource,
 		NewPTRRecordResource,
 		NewReverseZoneResource,
-		NewRecursorConfigResource,
 		NewRecursorForwardZoneResource,
 	}
 }

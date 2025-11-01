@@ -37,8 +37,8 @@ func TestAccDataSourcePDNSReverseZone_notFound(t *testing.T) {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
-				Config:      testAccDataSourcePDNSReverseZoneConfig(cidr),
-				ExpectError: regexp.MustCompile(fmt.Sprintf("reverse zone for CIDR %s not found", cidr)),
+				Config:      testAccDataSourcePDNSReverseZoneNotFoundConfig(cidr),
+				ExpectError: regexp.MustCompile("Couldn't fetch zone"),
 			},
 		},
 	})
@@ -61,8 +61,35 @@ func TestAccDataSourcePDNSReverseZone_invalidCIDR(t *testing.T) {
 
 func testAccDataSourcePDNSReverseZoneConfig(cidr string) string {
 	return fmt.Sprintf(`
+provider "powerdns" {
+  server_url         = "http://localhost:8081"
+  recursor_server_url = "http://localhost:8082"
+  api_key            = "secret"
+}
+
+resource "powerdns_reverse_zone" "test_reverse_zone" {
+  cidr        = %[1]q
+  kind        = "Master"
+  nameservers = ["ns1.test.example.com.", "ns2.test.example.com."]
+}
+
 data "powerdns_reverse_zone" "test" {
-  cidr = "%s"
+  cidr = %[1]q
+  depends_on = [powerdns_reverse_zone.test_reverse_zone]
+}
+`, cidr)
+}
+
+func testAccDataSourcePDNSReverseZoneNotFoundConfig(cidr string) string {
+	return fmt.Sprintf(`
+provider "powerdns" {
+  server_url         = "http://localhost:8081"
+  recursor_server_url = "http://localhost:8082"
+  api_key            = "secret"
+}
+
+data "powerdns_reverse_zone" "test" {
+  cidr = %[1]q
 }
 `, cidr)
 }

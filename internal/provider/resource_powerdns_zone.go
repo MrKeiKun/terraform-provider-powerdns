@@ -7,12 +7,14 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
@@ -53,6 +55,12 @@ func (r *ZoneResource) Schema(ctx context.Context, req resource.SchemaRequest, r
 			"kind": schema.StringAttribute{
 				MarkdownDescription: "The kind of the zone",
 				Required:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
+				Validators: []validator.String{
+					stringvalidator.OneOf("Native", "Master", "Slave"),
+				},
 			},
 			"account": schema.StringAttribute{
 				MarkdownDescription: "The account owning the zone",
@@ -113,8 +121,14 @@ func (r *ZoneResource) Create(ctx context.Context, req resource.CreateRequest, r
 		return
 	}
 
+	// Normalize kind to match API response format
+	normalizedKind := normalizeKind(data.Kind.ValueString())
+	if normalizedKind != data.Kind.ValueString() {
+		data.Kind = types.StringValue(normalizedKind)
+	}
+
 	// Validate masters for Slave zones
-	if data.Kind.ValueString() == "Slave" && data.Masters.IsNull() {
+	if normalizedKind == "Slave" && data.Masters.IsNull() {
 		resp.Diagnostics.AddError("Missing required attribute", "masters attribute is required for Slave zones")
 		return
 	}
@@ -163,14 +177,14 @@ func (r *ZoneResource) Create(ctx context.Context, req resource.CreateRequest, r
 
 	zoneInfo := ZoneInfo{
 		Name:        data.Name.ValueString(),
-		Kind:        data.Kind.ValueString(),
+		Kind:        normalizeKind(data.Kind.ValueString()), // Normalize kind to match API response
 		Account:     data.Account.ValueString(),
 		Nameservers: nameservers,
 		SoaEditAPI:  data.SoaEditAPI.ValueString(),
 	}
 
 	if len(masters) > 0 {
-		if strings.EqualFold(zoneInfo.Kind, "Slave") {
+		if normalizeKind(zoneInfo.Kind) == "Slave" {
 			zoneInfo.Masters = masters
 		} else {
 			resp.Diagnostics.AddError("Invalid configuration", "masters attribute is supported only for Slave kind")
@@ -189,6 +203,59 @@ func (r *ZoneResource) Create(ctx context.Context, req resource.CreateRequest, r
 	}
 
 	data.ID = types.StringValue(createdZoneInfo.ID)
+	data.Name = types.StringValue(createdZoneInfo.Name)
+	data.Kind = types.StringValue(createdZoneInfo.Kind)
+	data.Account = types.StringValue(createdZoneInfo.Account)
+	data.SoaEditAPI = types.StringValue(createdZoneInfo.SoaEditAPI)
+
+	// Set nameservers and masters from the response if available
+	if !strings.EqualFold(createdZoneInfo.Kind, "Slave") {
+		var nameservers []types.String
+		for _, ns := range createdZoneInfo.Nameservers {
+			nameservers = append(nameservers, types.StringValue(ns))
+		}
+		if len(nameservers) > 0 {
+			data.Nameservers, _ = types.SetValueFrom(ctx, types.StringType, nameservers)
+		}
+	}
+
+	if strings.EqualFold(createdZoneInfo.Kind, "Slave") {
+		var masters []types.String
+		for _, master := range createdZoneInfo.Masters {
+			masters = append(masters, types.StringValue(master))
+		}
+		data.Masters, _ = types.SetValueFrom(ctx, types.StringType, masters)
+	}
+
+	// Handle computed fields that might be empty
+	if createdZoneInfo.Account == "" {
+		data.Account = types.StringValue("admin") // Empty account defaults to "admin"
+	} else {
+		data.Account = types.StringValue(createdZoneInfo.Account)
+	}
+	if createdZoneInfo.SoaEditAPI == "" {
+		data.SoaEditAPI = types.StringNull()
+	}
+
+	// Set nameservers and masters from the response if available
+	if normalizeKind(createdZoneInfo.Kind) != "Slave" {
+		var nameservers []types.String
+		for _, ns := range createdZoneInfo.Nameservers {
+			nameservers = append(nameservers, types.StringValue(ns))
+		}
+		if len(nameservers) > 0 {
+			data.Nameservers, _ = types.SetValueFrom(ctx, types.StringType, nameservers)
+		}
+	}
+
+	if normalizeKind(createdZoneInfo.Kind) == "Slave" {
+		var masters []types.String
+		for _, master := range createdZoneInfo.Masters {
+			masters = append(masters, types.StringValue(master))
+		}
+		data.Masters, _ = types.SetValueFrom(ctx, types.StringType, masters)
+	}
+
 	tflog.Info(ctx, "Created PowerDNS Zone", map[string]any{"id": createdZoneInfo.ID})
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -219,11 +286,39 @@ func (r *ZoneResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 
 	data.Name = types.StringValue(zoneInfo.Name)
 	data.Kind = types.StringValue(zoneInfo.Kind)
-	data.Account = types.StringValue(zoneInfo.Account)
 	data.SoaEditAPI = types.StringValue(zoneInfo.SoaEditAPI)
 
+	// Handle computed fields that might be empty
+	if zoneInfo.Account == "" {
+		data.Account = types.StringValue("admin")
+	} else {
+		data.Account = types.StringValue(zoneInfo.Account)
+	}
+	if zoneInfo.SoaEditAPI == "" {
+		data.SoaEditAPI = types.StringNull()
+	}
+
+	// Set nameservers and masters from the response if available
+	if normalizeKind(zoneInfo.Kind) != "Slave" {
+		var nameservers []types.String
+		for _, ns := range zoneInfo.Nameservers {
+			nameservers = append(nameservers, types.StringValue(ns))
+		}
+		if len(nameservers) > 0 {
+			data.Nameservers, _ = types.SetValueFrom(ctx, types.StringType, nameservers)
+		}
+	}
+
+	if normalizeKind(zoneInfo.Kind) == "Slave" {
+		var masters []types.String
+		for _, master := range zoneInfo.Masters {
+			masters = append(masters, types.StringValue(master))
+		}
+		data.Masters, _ = types.SetValueFrom(ctx, types.StringType, masters)
+	}
+
 	// Only manage NS records for non-Slave zones
-	if !strings.EqualFold(zoneInfo.Kind, "Slave") {
+	if normalizeKind(zoneInfo.Kind) != "Slave" {
 		nameservers, err := r.client.ListRecordsInRRSet(ctx, zoneInfo.Name, zoneInfo.Name, "NS")
 		if err != nil {
 			resp.Diagnostics.AddError("Failed to read nameservers", fmt.Errorf("couldn't fetch zone %s nameservers from PowerDNS: %w", zoneInfo.Name, err).Error())
@@ -238,14 +333,6 @@ func (r *ZoneResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 		data.Nameservers, _ = types.SetValueFrom(ctx, types.StringType, zoneNameservers)
 	}
 
-	if strings.EqualFold(zoneInfo.Kind, "Slave") {
-		var masters []types.String
-		for _, master := range zoneInfo.Masters {
-			masters = append(masters, types.StringValue(master))
-		}
-		data.Masters, _ = types.SetValueFrom(ctx, types.StringType, masters)
-	}
-
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -257,12 +344,18 @@ func (r *ZoneResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
+	// Normalize kind to match API response format
+	normalizedKind := normalizeKind(data.Kind.ValueString())
+	if normalizedKind != data.Kind.ValueString() {
+		data.Kind = types.StringValue(normalizedKind)
+	}
+
 	tflog.SetField(ctx, "zone_id", data.ID.ValueString())
 	tflog.Debug(ctx, "Updating PowerDNS Zone")
 
 	zoneInfo := ZoneInfoUpd{
 		Name:       data.Name.ValueString(),
-		Kind:       data.Kind.ValueString(),
+		Kind:       normalizeKind(data.Kind.ValueString()), // Normalize kind to match API response
 		Account:    data.Account.ValueString(),
 		SoaEditAPI: data.SoaEditAPI.ValueString(),
 	}
@@ -283,6 +376,35 @@ func (r *ZoneResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	data.Kind = types.StringValue(updatedZoneInfo.Kind)
 	data.Account = types.StringValue(updatedZoneInfo.Account)
 	data.SoaEditAPI = types.StringValue(updatedZoneInfo.SoaEditAPI)
+
+	// Handle computed fields that might be empty
+	if updatedZoneInfo.Account == "" {
+		data.Account = types.StringValue("admin") // Empty account defaults to "admin"
+	} else {
+		data.Account = types.StringValue(updatedZoneInfo.Account)
+	}
+	if updatedZoneInfo.SoaEditAPI == "" {
+		data.SoaEditAPI = types.StringNull()
+	}
+
+	// Set nameservers and masters from the response if available
+	if normalizeKind(updatedZoneInfo.Kind) != "Slave" {
+		var nameservers []types.String
+		for _, ns := range updatedZoneInfo.Nameservers {
+			nameservers = append(nameservers, types.StringValue(ns))
+		}
+		if len(nameservers) > 0 {
+			data.Nameservers, _ = types.SetValueFrom(ctx, types.StringType, nameservers)
+		}
+	}
+
+	if normalizeKind(updatedZoneInfo.Kind) == "Slave" {
+		var masters []types.String
+		for _, master := range updatedZoneInfo.Masters {
+			masters = append(masters, types.StringValue(master))
+		}
+		data.Masters, _ = types.SetValueFrom(ctx, types.StringType, masters)
+	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -312,4 +434,23 @@ func (r *ZoneResource) ImportState(ctx context.Context, req resource.ImportState
 
 func NewZoneResource() resource.Resource {
 	return &ZoneResource{}
+}
+
+// normalizeKind normalizes the kind value to title case.
+func normalizeKind(kind string) string {
+	switch strings.ToLower(kind) {
+	case "native":
+		return "Native"
+	case "master":
+		return "Master"
+	case "slave":
+		return "Slave"
+	default:
+		// Use proper title case for other values
+		lowerKind := strings.ToLower(kind)
+		if len(lowerKind) > 0 {
+			return strings.ToUpper(lowerKind[:1]) + lowerKind[1:]
+		}
+		return lowerKind
+	}
 }

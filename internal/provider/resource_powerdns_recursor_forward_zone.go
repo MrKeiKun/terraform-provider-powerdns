@@ -24,9 +24,11 @@ type RecursorForwardZoneResource struct {
 
 // RecursorForwardZoneResourceModel describes the resource data model.
 type RecursorForwardZoneResourceModel struct {
-	Zone    types.String `tfsdk:"zone"`
-	Servers types.List   `tfsdk:"servers"`
-	ID      types.String `tfsdk:"id"`
+	Zone             types.String `tfsdk:"zone"`
+	Servers          types.List   `tfsdk:"servers"`
+	RecursionDesired types.Bool   `tfsdk:"recursion_desired"`
+	NotifyAllowed    types.Bool   `tfsdk:"notify_allowed"`
+	ID               types.String `tfsdk:"id"`
 }
 
 func (r *RecursorForwardZoneResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -35,22 +37,33 @@ func (r *RecursorForwardZoneResource) Metadata(ctx context.Context, req resource
 
 func (r *RecursorForwardZoneResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
+		MarkdownDescription: "Manages PowerDNS recursor forward zones. Forward zones allow queries for specific domains to be sent to designated DNS servers.",
 		Attributes: map[string]schema.Attribute{
 			"zone": schema.StringAttribute{
-				MarkdownDescription: "The zone name to forward",
+				MarkdownDescription: "The zone name to forward. Must be a valid DNS zone name ending with a dot.",
 				Required:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
 			},
 			"servers": schema.ListAttribute{
-				ElementType:         types.StringType,
-				MarkdownDescription: "List of DNS servers to forward queries to",
+				MarkdownDescription: "List of DNS servers to forward queries to. Each server must be a valid IP address or hostname.",
 				Required:            true,
+				ElementType:         types.StringType,
+			},
+			"recursion_desired": schema.BoolAttribute{
+				MarkdownDescription: "Whether the RD (Recursion Desired) bit is set. When true, the recursor will set the RD bit on outgoing queries. Default is true.",
+				Optional:            true,
+				Computed:            true,
+			},
+			"notify_allowed": schema.BoolAttribute{
+				MarkdownDescription: "Whether or not to permit incoming NOTIFY to wipe cache for the domain. For zones of type \"Forwarded\".",
+				Optional:            true,
+				Computed:            true,
 			},
 			"id": schema.StringAttribute{
+				MarkdownDescription: "Zone identifier. This is automatically generated and corresponds to the zone name.",
 				Computed:            true,
-				MarkdownDescription: "Zone identifier",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
 				},
@@ -79,7 +92,13 @@ func (r *RecursorForwardZoneResource) Create(ctx context.Context, req resource.C
 		return
 	}
 
-	zone := data.Zone.ValueString()
+	zoneName := data.Zone.ValueString()
+
+	// Ensure zone name ends with a dot for DNS standards
+	if zoneName != "" && zoneName[len(zoneName)-1] != '.' {
+		zoneName = zoneName + "."
+	}
+
 	var servers []string
 	if !data.Servers.IsNull() {
 		for _, s := range data.Servers.Elements() {
@@ -89,36 +108,49 @@ func (r *RecursorForwardZoneResource) Create(ctx context.Context, req resource.C
 		}
 	}
 
-	tflog.SetField(ctx, "zone", zone)
-	tflog.Debug(ctx, "Creating recursor forward zone")
-
-	// Get current forward-zones
-	currentValue, err := r.client.GetRecursorConfigValue(ctx, "forward-zones")
-	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			currentValue = ""
-		} else {
-			resp.Diagnostics.AddError("Failed to get current forward-zones config", err.Error())
-			return
-		}
+	// Use false as default to match PowerDNS API behavior
+	recursionDesired := false
+	if !data.RecursionDesired.IsNull() {
+		recursionDesired = data.RecursionDesired.ValueBool()
 	}
 
-	// Parse current forward-zones
-	forwardZones := parseForwardZones(currentValue)
+	// Use false as default to match PowerDNS API behavior
+	notifyAllowed := false
+	if !data.NotifyAllowed.IsNull() {
+		notifyAllowed = data.NotifyAllowed.ValueBool()
+	}
 
-	// Add/update zone
-	forwardZones[zone] = servers
+	tflog.SetField(ctx, "zone", zoneName)
+	tflog.Debug(ctx, "Creating recursor forward zone")
 
-	// Serialize back
-	newValue := serializeForwardZones(forwardZones)
+	// Create the zone
+	recursorZone := RecursorZone{
+		Name:             zoneName,
+		Type:             "Zone",
+		Kind:             "Forwarded",
+		Servers:          servers,
+		RecursionDesired: recursionDesired,
+		NotifyAllowed:    notifyAllowed,
+	}
 
-	if err := r.client.SetRecursorConfigValue(ctx, "forward-zones", newValue); err != nil {
+	createdZone, err := r.client.CreateRecursorZone(ctx, recursorZone)
+	if err != nil {
 		resp.Diagnostics.AddError("Failed to create recursor forward zone", err.Error())
 		return
 	}
 
-	data.ID = types.StringValue(zone)
-	tflog.Info(ctx, "Created recursor forward zone", map[string]any{"id": zone})
+	data.ID = types.StringValue(createdZone.Name)
+
+	// Update computed fields - use original servers to avoid API normalization
+	var serversList []types.String
+	for _, s := range servers {
+		serversList = append(serversList, types.StringValue(s))
+	}
+	data.Servers, _ = types.ListValueFrom(ctx, types.StringType, serversList)
+	data.RecursionDesired = types.BoolValue(createdZone.RecursionDesired)
+	data.NotifyAllowed = types.BoolValue(createdZone.NotifyAllowed)
+
+	tflog.Info(ctx, "Created recursor forward zone", map[string]any{"id": createdZone.Name})
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -131,37 +163,42 @@ func (r *RecursorForwardZoneResource) Read(ctx context.Context, req resource.Rea
 		return
 	}
 
-	zone := data.ID.ValueString()
+	zoneName := data.ID.ValueString()
 
-	tflog.SetField(ctx, "zone", zone)
+	tflog.SetField(ctx, "zone", zoneName)
 	tflog.Debug(ctx, "Reading recursor forward zone")
 
-	value, err := r.client.GetRecursorConfigValue(ctx, "forward-zones")
+	zone, err := r.client.GetRecursorZone(ctx, zoneName)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
-			tflog.Warn(ctx, "Recursor forward-zones config not found; removing from state")
+			tflog.Warn(ctx, "Recursor forward zone not found; removing from state")
 			resp.State.RemoveResource(ctx)
 			return
 		}
-		resp.Diagnostics.AddError("Failed to get forward-zones config", err.Error())
+		resp.Diagnostics.AddError("Failed to get recursor forward zone", err.Error())
 		return
 	}
 
-	forwardZones := parseForwardZones(value)
-
-	servers, exists := forwardZones[zone]
-	if !exists {
-		tflog.Warn(ctx, "Forward zone not found; removing from state")
+	// Check if it's a forwarded zone
+	if zone.Kind != "Forwarded" {
+		tflog.Warn(ctx, "Zone is not a forward zone; removing from state")
 		resp.State.RemoveResource(ctx)
 		return
 	}
 
-	data.Zone = types.StringValue(zone)
+	data.Zone = types.StringValue(zone.Name)
+	// For Read, we need to normalize the servers from API to match what user expects
 	var serversList []types.String
-	for _, s := range servers {
+	for _, s := range zone.Servers {
+		// Remove default port :53 if present to match user input
+		if strings.HasSuffix(s, ":53") {
+			s = strings.TrimSuffix(s, ":53")
+		}
 		serversList = append(serversList, types.StringValue(s))
 	}
 	data.Servers, _ = types.ListValueFrom(ctx, types.StringType, serversList)
+	data.RecursionDesired = types.BoolValue(zone.RecursionDesired)
+	data.NotifyAllowed = types.BoolValue(zone.NotifyAllowed)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -174,7 +211,13 @@ func (r *RecursorForwardZoneResource) Update(ctx context.Context, req resource.U
 		return
 	}
 
-	zone := data.ID.ValueString()
+	zoneName := data.Zone.ValueString()
+
+	// Ensure zone name ends with a dot
+	if zoneName != "" && zoneName[len(zoneName)-1] != '.' {
+		zoneName = zoneName + "."
+	}
+
 	var servers []string
 	if !data.Servers.IsNull() {
 		for _, s := range data.Servers.Elements() {
@@ -184,29 +227,45 @@ func (r *RecursorForwardZoneResource) Update(ctx context.Context, req resource.U
 		}
 	}
 
-	tflog.SetField(ctx, "zone", zone)
-	tflog.Debug(ctx, "Updating recursor forward zone")
-
-	// Get current forward-zones
-	currentValue, err := r.client.GetRecursorConfigValue(ctx, "forward-zones")
-	if err != nil {
-		resp.Diagnostics.AddError("Failed to get current forward-zones", err.Error())
-		return
+	// Use false as default to match PowerDNS API behavior
+	recursionDesired := false
+	if !data.RecursionDesired.IsNull() {
+		recursionDesired = data.RecursionDesired.ValueBool()
 	}
 
-	// Parse current forward-zones
-	forwardZones := parseForwardZones(currentValue)
+	notifyAllowed := false
+	if !data.NotifyAllowed.IsNull() {
+		notifyAllowed = data.NotifyAllowed.ValueBool()
+	}
 
-	// Update zone
-	forwardZones[zone] = servers
+	tflog.SetField(ctx, "zone", zoneName)
+	tflog.Debug(ctx, "Updating recursor forward zone")
 
-	// Serialize back
-	newValue := serializeForwardZones(forwardZones)
-
-	if err := r.client.SetRecursorConfigValue(ctx, "forward-zones", newValue); err != nil {
+	// For updates, we need to delete and recreate the zone
+	err := r.client.DeleteRecursorZone(ctx, zoneName)
+	if err != nil {
 		resp.Diagnostics.AddError("Failed to update recursor forward zone", err.Error())
 		return
 	}
+
+	// Recreate the zone with updated settings
+	updateData := RecursorZone{
+		Name:             zoneName,
+		Type:             "Zone",
+		Kind:             "Forwarded",
+		Servers:          servers,
+		RecursionDesired: recursionDesired,
+		NotifyAllowed:    notifyAllowed,
+	}
+
+	_, err = r.client.CreateRecursorZone(ctx, updateData)
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to update recursor forward zone", err.Error())
+		return
+	}
+
+	// Update the state with the normalized zone name
+	data.Zone = types.StringValue(zoneName)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -219,28 +278,20 @@ func (r *RecursorForwardZoneResource) Delete(ctx context.Context, req resource.D
 		return
 	}
 
-	zone := data.ID.ValueString()
+	zoneName := data.Zone.ValueString()
 
-	tflog.SetField(ctx, "zone", zone)
+	tflog.SetField(ctx, "zone", zoneName)
 	tflog.Debug(ctx, "Deleting recursor forward zone")
 
-	// Get current forward-zones
-	currentValue, err := r.client.GetRecursorConfigValue(ctx, "forward-zones")
+	err := r.client.DeleteRecursorZone(ctx, zoneName)
 	if err != nil {
-		resp.Diagnostics.AddError("Failed to get current forward-zones", err.Error())
-		return
-	}
-
-	// Parse current forward-zones
-	forwardZones := parseForwardZones(currentValue)
-
-	// Remove zone
-	delete(forwardZones, zone)
-
-	// Serialize back
-	newValue := serializeForwardZones(forwardZones)
-
-	if err := r.client.SetRecursorConfigValue(ctx, "forward-zones", newValue); err != nil {
+		// If the zone doesn't exist, that's actually what we want
+		// Return success to allow Terraform to clean up the state
+		if strings.Contains(err.Error(), "Could not find domain") {
+			tflog.Info(ctx, "Recursor forward zone already deleted", map[string]any{"zone": zoneName})
+			return
+		}
+		// For other errors, report them
 		resp.Diagnostics.AddError("Error deleting recursor forward zone", err.Error())
 		return
 	}
@@ -254,40 +305,4 @@ func (r *RecursorForwardZoneResource) ImportState(ctx context.Context, req resou
 
 func NewRecursorForwardZoneResource() resource.Resource {
 	return &RecursorForwardZoneResource{}
-}
-
-// parseForwardZones parses the forward-zones string into a map.
-func parseForwardZones(value string) map[string][]string {
-	result := make(map[string][]string)
-	if value == "" {
-		return result
-	}
-
-	entries := strings.Split(value, ";")
-	for _, entry := range entries {
-		entry = strings.TrimSpace(entry)
-		if entry == "" {
-			continue
-		}
-		parts := strings.SplitN(entry, "=", 2)
-		if len(parts) == 2 {
-			zone := strings.TrimSpace(parts[0])
-			serversStr := strings.TrimSpace(parts[1])
-			servers := strings.Split(serversStr, ",")
-			for i, s := range servers {
-				servers[i] = strings.TrimSpace(s)
-			}
-			result[zone] = servers
-		}
-	}
-	return result
-}
-
-// serializeForwardZones serializes the map back to forward-zones string.
-func serializeForwardZones(zones map[string][]string) string {
-	var entries []string
-	for zone, servers := range zones {
-		entries = append(entries, zone+"="+strings.Join(servers, ","))
-	}
-	return strings.Join(entries, ";")
 }

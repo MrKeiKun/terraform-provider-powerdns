@@ -135,6 +135,18 @@ func (r *PTRRecordResource) Create(ctx context.Context, req resource.CreateReque
 		},
 	}
 
+	// Ensure reverse zone exists before creating PTR record
+	exists, err := r.client.ZoneExists(ctx, reverseZone)
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to verify zone existence", fmt.Errorf("error checking zone existence: %w", err).Error())
+		return
+	}
+
+	if !exists {
+		resp.Diagnostics.AddError("Zone not found", fmt.Sprintf("reverse zone %s does not exist", reverseZone))
+		return
+	}
+
 	recID, err := r.client.ReplaceRecordSet(ctx, reverseZone, rrSet)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to create PTR record", fmt.Errorf("failed to create PTR record: %w", err).Error())
@@ -233,6 +245,17 @@ func (r *PTRRecordResource) Delete(ctx context.Context, req resource.DeleteReque
 	}
 
 	if err := r.client.DeleteRecordSet(ctx, reverseZone, ptrName+suffix, "PTR"); err != nil {
+		// Check if this is a backend limitation error (common with LMDB)
+		if strings.Contains(err.Error(), "Hosting backend does not support editing records") ||
+			strings.Contains(err.Error(), "Attempt to abort a transaction while there isn't one open") {
+			tflog.Warn(ctx, "Backend does not support record deletion via API, removing from state only", map[string]any{
+				"error": err.Error(),
+				"zone":  reverseZone,
+				"ptr":   ptrName + suffix,
+			})
+			// Don't return error - let the resource be removed from state
+			return
+		}
 		resp.Diagnostics.AddError("Failed to delete PTR record", fmt.Errorf("error deleting PTR record: %w", err).Error())
 		return
 	}

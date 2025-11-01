@@ -207,20 +207,9 @@ func (client *Client) newRequest(ctx context.Context, method string, endpoint st
 
 // Creates a new request for recursor API.
 func (client *Client) newRequestRecursor(ctx context.Context, method string, endpoint string, body []byte) (*http.Request, error) {
-	var err error
-	if client.APIVersion < 0 {
-		client.APIVersion, err = client.detectAPIVersion(ctx)
-	}
-	if err != nil {
-		return nil, err
-	}
-
 	var urlStr string
-	if client.APIVersion > 0 {
-		urlStr = client.RecursorServerURL + "/api/v" + strconv.Itoa(client.APIVersion) + endpoint
-	} else {
-		urlStr = client.RecursorServerURL + endpoint
-	}
+	urlStr = client.RecursorServerURL + "/api/v1" + endpoint
+
 	u, err := url.Parse(urlStr)
 	if err != nil {
 		return nil, fmt.Errorf("error during parsing request URL: %s", err)
@@ -244,6 +233,19 @@ func (client *Client) newRequestRecursor(ctx context.Context, method string, end
 	}
 
 	return req, nil
+}
+
+// RecursorZone represents a PowerDNS recursor zone object.
+type RecursorZone struct {
+	ID               string              `json:"id"`
+	Name             string              `json:"name"`
+	Type             string              `json:"type"`
+	Kind             string              `json:"kind"`
+	Servers          []string            `json:"servers"`
+	RecursionDesired bool                `json:"recursion_desired"`
+	NotifyAllowed    bool                `json:"notify_allowed"`
+	URL              string              `json:"url"`
+	RRSets           []ResourceRecordSet `json:"rrsets"`
 }
 
 // ZoneInfo represents a PowerDNS zone object.
@@ -720,168 +722,90 @@ func (client *Client) setServerVersion(ctx context.Context) error {
 	return fmt.Errorf("unable to get server version")
 }
 
-// GetRecursorConfig gets all recursor config.
-func (client *Client) GetRecursorConfig(ctx context.Context) (map[string]string, error) {
-	req, err := client.newRequestRecursor(ctx, http.MethodGet, "/servers/localhost/config", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-			})
-		}
-	}()
-
-	switch resp.StatusCode {
-	case http.StatusOK:
-		var config map[string]string
-		if err := json.NewDecoder(resp.Body).Decode(&config); err != nil {
-			return nil, err
-		}
-		return config, nil
-
-	case http.StatusNotFound:
-		return nil, ErrNotFound
-
-	default:
-		errorResp := new(errorResponse)
-		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return nil, fmt.Errorf("error getting recursor config")
-		}
-		return nil, fmt.Errorf("error getting recursor config: %q", errorResp.ErrorMsg)
-	}
+// ListRecursorZones returns all zones of the recursor server.
+func (client *Client) ListRecursorZones(ctx context.Context) ([]RecursorZone, error) {
+	var zones []RecursorZone
+	err := client.doRequestRecursor(ctx, http.MethodGet, "/servers/localhost/zones", nil, http.StatusOK, &zones)
+	return zones, err
 }
 
-// GetRecursorConfigValue gets a specific recursor config value.
-func (client *Client) GetRecursorConfigValue(ctx context.Context, name string) (string, error) {
-	req, err := client.newRequestRecursor(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/config/%s", name), nil)
-	if err != nil {
-		return "", err
-	}
-
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-				"name":   name,
-			})
-		}
-	}()
-
-	switch resp.StatusCode {
-	case http.StatusOK:
-		var value string
-		if err := json.NewDecoder(resp.Body).Decode(&value); err != nil {
-			return "", err
-		}
-		return value, nil
-
-	case http.StatusNotFound:
-		return "", ErrNotFound
-
-	default:
-		errorResp := new(errorResponse)
-		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return "", fmt.Errorf("error getting recursor config %s", name)
-		}
-		return "", fmt.Errorf("error getting recursor config %s: %q", name, errorResp.ErrorMsg)
-	}
+// GetRecursorZone gets a specific zone.
+func (client *Client) GetRecursorZone(ctx context.Context, zoneName string) (RecursorZone, error) {
+	var zone RecursorZone
+	err := client.doRequestRecursor(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/zones/%s", zoneName), nil, http.StatusOK, &zone)
+	return zone, err
 }
 
-// SetRecursorConfigValue sets a recursor config value.
-func (client *Client) SetRecursorConfigValue(ctx context.Context, name string, value string) error {
-	body, err := json.Marshal(value)
+// CreateRecursorZone creates a new zone.
+func (client *Client) CreateRecursorZone(ctx context.Context, zone RecursorZone) (RecursorZone, error) {
+	body, err := json.Marshal(zone)
 	if err != nil {
-		return err
+		return RecursorZone{}, err
 	}
 
-	req, err := client.newRequestRecursor(ctx, http.MethodPut, fmt.Sprintf("/servers/localhost/config/%s", name), body)
-	if err != nil {
-		return err
-	}
-
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-				"name":   name,
-			})
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		errorResp := new(errorResponse)
-		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return fmt.Errorf("error setting recursor config %s", name)
-		}
-		return fmt.Errorf("error setting recursor config %s: %q", name, errorResp.ErrorMsg)
-	}
-
-	return nil
+	var createdZone RecursorZone
+	err = client.doRequestRecursor(ctx, http.MethodPost, "/servers/localhost/zones", body, http.StatusCreated, &createdZone)
+	return createdZone, err
 }
 
-// DeleteRecursorConfigValue deletes a recursor config value.
-func (client *Client) DeleteRecursorConfigValue(ctx context.Context, name string) error {
-	req, err := client.newRequestRecursor(ctx, http.MethodDelete, fmt.Sprintf("/servers/localhost/config/%s", name), nil)
+// UpdateRecursorZone updates an existing zone using PATCH method.
+func (client *Client) UpdateRecursorZone(ctx context.Context, zoneName string, zone RecursorZone) (RecursorZone, error) {
+	body, err := json.Marshal(zone)
 	if err != nil {
-		return err
+		return RecursorZone{}, err
 	}
 
-	resp, err := client.HTTP.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-				"name":   name,
-			})
-		}
-	}()
+	var updatedZone RecursorZone
+	err = client.doRequestRecursor(ctx, http.MethodPatch, fmt.Sprintf("/servers/localhost/zones/%s", zoneName), body, http.StatusOK, &updatedZone)
+	return updatedZone, err
+}
 
-	switch resp.StatusCode {
-	case http.StatusNoContent:
-		return nil
-
-	case http.StatusNotFound:
-		return ErrNotFound
-
-	default:
-		errorResp := new(errorResponse)
-		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return fmt.Errorf("error deleting recursor config %s", name)
-		}
-		return fmt.Errorf("error deleting recursor config %s: %q", name, errorResp.ErrorMsg)
-	}
+// DeleteRecursorZone deletes a zone.
+func (client *Client) DeleteRecursorZone(ctx context.Context, zoneName string) error {
+	return client.doRequestRecursor(ctx, http.MethodDelete, fmt.Sprintf("/servers/localhost/zones/%s", zoneName), nil, http.StatusNoContent, nil)
 }
 
 // doRequest performs a generic HTTP request with common error handling.
 func (client *Client) doRequest(ctx context.Context, method, endpoint string, body []byte, successStatus int, response interface{}) error {
 	req, err := client.newRequest(ctx, method, endpoint, body)
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+				"error":  err.Error(),
+				"method": req.Method,
+				"url":    req.URL.String(),
+			})
+		}
+	}()
+
+	if resp.StatusCode != successStatus {
+		errorResp := new(errorResponse)
+		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
+			return fmt.Errorf("error response: %d", resp.StatusCode)
+		}
+		return fmt.Errorf("error: %d, reason: %q", resp.StatusCode, errorResp.ErrorMsg)
+	}
+
+	if response != nil {
+		if err := json.NewDecoder(resp.Body).Decode(response); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// doRequestRecursor performs a generic HTTP request to recursor API with common error handling.
+func (client *Client) doRequestRecursor(ctx context.Context, method, endpoint string, body []byte, successStatus int, response interface{}) error {
+	req, err := client.newRequestRecursor(ctx, method, endpoint, body)
 	if err != nil {
 		return err
 	}

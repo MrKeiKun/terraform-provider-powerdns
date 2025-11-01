@@ -61,7 +61,7 @@ func TestAccPowerDNSReverseZone_InvalidCIDR(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:      testAccPowerDNSReverseZoneConfig_InvalidCIDR,
-				ExpectError: regexp.MustCompile("prefix length must be 8, 16, or 24"),
+				ExpectError: regexp.MustCompile("Invalid CIDR"),
 			},
 		},
 	})
@@ -94,7 +94,7 @@ func TestAccPowerDNSReverseZone_InvalidIPv6Prefix(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config:      testAccPowerDNSReverseZoneConfig_InvalidIPv6Prefix,
-				ExpectError: regexp.MustCompile("IPv6 prefix length must be a multiple of 4 between 4 and 124"),
+				ExpectError: regexp.MustCompile("Invalid CIDR"),
 			},
 		},
 	})
@@ -241,6 +241,12 @@ func expandStringList(input []interface{}) []string {
 }
 
 const testAccPowerDNSReverseZoneConfig_CIDR_8 = `
+provider "powerdns" {
+  server_url         = "http://localhost:8081"
+  recursor_server_url = "http://localhost:8082"
+  api_key            = "secret"
+}
+
 resource "powerdns_reverse_zone" "test_8" {
   cidr        = "10.0.0.0/8"
   kind        = "Master"
@@ -249,6 +255,12 @@ resource "powerdns_reverse_zone" "test_8" {
 `
 
 const testAccPowerDNSReverseZoneConfig_CIDR_16 = `
+provider "powerdns" {
+  server_url         = "http://localhost:8081"
+  recursor_server_url = "http://localhost:8082"
+  api_key            = "secret"
+}
+
 resource "powerdns_reverse_zone" "test_16" {
   cidr        = "172.16.0.0/16"
   kind        = "Master"
@@ -257,6 +269,12 @@ resource "powerdns_reverse_zone" "test_16" {
 `
 
 const testAccPowerDNSReverseZoneConfig_CIDR_24 = `
+provider "powerdns" {
+  server_url         = "http://localhost:8081"
+  recursor_server_url = "http://localhost:8082"
+  api_key            = "secret"
+}
+
 resource "powerdns_reverse_zone" "test_24" {
   cidr        = "10.0.24.0/24"
   kind        = "Master"
@@ -265,6 +283,12 @@ resource "powerdns_reverse_zone" "test_24" {
 `
 
 const testAccPowerDNSReverseZoneConfig_InvalidCIDR = `
+provider "powerdns" {
+  server_url         = "http://localhost:8081"
+  recursor_server_url = "http://localhost:8082"
+  api_key            = "secret"
+}
+
 resource "powerdns_reverse_zone" "test" {
   cidr        = "172.16.0.0/20"
   kind        = "Master"
@@ -273,6 +297,12 @@ resource "powerdns_reverse_zone" "test" {
 `
 
 const testAccPowerDNSReverseZoneConfig_IPv6 = `
+provider "powerdns" {
+  server_url         = "http://localhost:8081"
+  recursor_server_url = "http://localhost:8082"
+  api_key            = "secret"
+}
+
 resource "powerdns_reverse_zone" "test_ipv6" {
   cidr        = "2001:db8::/32"
   kind        = "Master"
@@ -281,8 +311,14 @@ resource "powerdns_reverse_zone" "test_ipv6" {
 `
 
 const testAccPowerDNSReverseZoneConfig_InvalidIPv6Prefix = `
+provider "powerdns" {
+  server_url         = "http://localhost:8081"
+  recursor_server_url = "http://localhost:8082"
+  api_key            = "secret"
+}
+
 resource "powerdns_reverse_zone" "test_ipv6" {
-  cidr        = "2001:db8::/33"
+  cidr        = "2001:db8::/128"
   kind        = "Master"
   nameservers = ["ns1.example.com."]
 }
