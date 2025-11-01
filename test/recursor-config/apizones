@@ -1,6 +1,2 @@
-{"localhost": {
-  "url": "/api/v1/servers/localhost/zones",
-  "password": "",
-  "api-key": "secret",
-  "apiconnector": "HTTP"
-}}
+auth_zones: []
+forward_zones: []
