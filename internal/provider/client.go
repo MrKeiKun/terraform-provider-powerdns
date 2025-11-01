@@ -196,10 +196,10 @@ func (client *Client) newRequest(ctx context.Context, method string, endpoint st
 	}
 
 	req.Header.Add("X-API-Key", client.APIKey)
-	req.Header.Add("Accept", "application/json")
+	req.Header.Add("Accept", contentTypeJSON)
 
-	if method != http.MethodGet {
-		req.Header.Add("Content-Type", "application/json")
+	if method != methodGet {
+		req.Header.Add("Content-Type", contentTypeJSON)
 	}
 
 	return req, nil
@@ -207,7 +207,7 @@ func (client *Client) newRequest(ctx context.Context, method string, endpoint st
 
 // Creates a new request for recursor API.
 func (client *Client) newRequestRecursor(ctx context.Context, method string, endpoint string, body []byte) (*http.Request, error) {
-	var urlStr = client.RecursorServerURL + "/api/v1" + endpoint
+	var urlStr = client.RecursorServerURL + apiVersion + endpoint
 
 	u, err := url.Parse(urlStr)
 	if err != nil {
@@ -225,10 +225,10 @@ func (client *Client) newRequestRecursor(ctx context.Context, method string, end
 	}
 
 	req.Header.Add("X-API-Key", client.APIKey)
-	req.Header.Add("Accept", "application/json")
+	req.Header.Add("Accept", contentTypeJSON)
 
-	if method != http.MethodGet {
-		req.Header.Add("Content-Type", "application/json")
+	if method != methodGet {
+		req.Header.Add("Content-Type", contentTypeJSON)
 	}
 
 	return req, nil
@@ -245,6 +245,18 @@ type RecursorZone struct {
 	NotifyAllowed    bool                `json:"notify_allowed"`
 	URL              string              `json:"url"`
 	RRSets           []ResourceRecordSet `json:"rrsets"`
+}
+
+// RecursorZoneCreate represents the data needed to create a PowerDNS recursor zone.
+// This excludes fields that are server-generated or read-only.
+// Based on PowerDNS Recursor API documentation for forwarding zones.
+type RecursorZoneCreate struct {
+	Name             string   `json:"name"`
+	Type             string   `json:"type"`
+	Kind             string   `json:"kind"`
+	Servers          []string `json:"servers"`
+	RecursionDesired bool     `json:"recursion_desired"`
+	NotifyAllowed    bool     `json:"notify_allowed"`
 }
 
 // ZoneInfo represents a PowerDNS zone object.
@@ -310,11 +322,69 @@ type serverInfo struct {
 
 const idSeparator string = ":::"
 
+// API Constants.
+const (
+	// Server endpoints.
+	defaultServerName = "localhost"
+	apiVersion        = "/api/v1"
+
+	// HTTP endpoints.
+	zonesEndpoint         = "/servers/" + defaultServerName + "/zones"
+	serverEndpoint        = "/servers/" + defaultServerName
+	recursorZonesEndpoint = "/servers/" + defaultServerName + "/zones"
+
+	// JSON content types.
+	contentTypeJSON = "application/json"
+
+	// HTTP methods.
+	methodGet     = "GET"
+	methodPost    = "POST"
+	methodPut     = "PUT"
+	methodPatch   = "PATCH"
+	methodDelete  = "DELETE"
+	methodOptions = "OPTIONS"
+)
+
 // Sentinel error for "not found" scenarios.
 var (
 	// ErrNotFound is returned when a resource is not found.
 	ErrNotFound = errors.New("not found")
 )
+
+// Helper function to close HTTP response body with consistent logging.
+func closeResponseBody(ctx context.Context, resp *http.Response, req *http.Request, err *error) {
+	if *err != nil {
+		return // Don't close on success path
+	}
+	if err := resp.Body.Close(); err != nil {
+		tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
+			"error":  err.Error(),
+			"method": req.Method,
+			"url":    req.URL.String(),
+		})
+	}
+}
+
+// Helper function for consistent error handling.
+func handleAPIError(ctx context.Context, resp *http.Response, req *http.Request) error {
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("error response: %d, failed to read body: %v", resp.StatusCode, err)
+	}
+
+	var errorResp errorResponse
+	if jsonErr := json.Unmarshal(bodyBytes, &errorResp); jsonErr != nil {
+		return fmt.Errorf("error response: %d, body: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	tflog.Error(ctx, "API error response", map[string]interface{}{
+		"status": resp.StatusCode,
+		"error":  errorResp.ErrorMsg,
+		"body":   string(bodyBytes),
+	})
+
+	return fmt.Errorf("error: %d, reason: %q", resp.StatusCode, errorResp.ErrorMsg)
+}
 
 // ID returns a record with the ID format.
 func (record *Record) ID() string {
@@ -341,33 +411,26 @@ func parseID(recID string) (string, string, error) {
 func (client *Client) detectAPIVersion(ctx context.Context) (int, error) {
 	httpClient := client.HTTP
 
-	u, err := url.Parse(client.ServerURL + "/api/v1/servers")
+	u, err := url.Parse(client.ServerURL + apiVersion + "/servers")
 	if err != nil {
 		return -1, fmt.Errorf("error while trying to detect the API version, request URL: %s", err)
 	}
 
-	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	req, err := http.NewRequest(methodGet, u.String(), nil)
 	if err != nil {
 		return -1, fmt.Errorf("error during creation of request: %s", err)
 	}
 
 	req.Header.Add("X-API-Key", client.APIKey)
-	req.Header.Add("Accept", "application/json")
+	req.Header.Add("Accept", contentTypeJSON)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return -1, err
 	}
 
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-			})
-		}
-	}()
+	var closeErr error
+	defer closeResponseBody(ctx, resp, req, &closeErr)
 
 	if resp.StatusCode == http.StatusOK {
 		return 1, nil
@@ -378,20 +441,20 @@ func (client *Client) detectAPIVersion(ctx context.Context) (int, error) {
 // ListZones returns all Zones of server, without records.
 func (client *Client) ListZones(ctx context.Context) ([]ZoneInfo, error) {
 	var zoneInfos []ZoneInfo
-	err := client.doRequest(ctx, http.MethodGet, "/servers/localhost/zones", nil, http.StatusOK, &zoneInfos)
+	err := client.doRequest(ctx, methodGet, zonesEndpoint, nil, http.StatusOK, &zoneInfos)
 	return zoneInfos, err
 }
 
 // GetZone gets a zone.
 func (client *Client) GetZone(ctx context.Context, name string) (ZoneInfo, error) {
 	var zoneInfo ZoneInfo
-	err := client.doRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/zones/%s", name), nil, http.StatusOK, &zoneInfo)
+	err := client.doRequest(ctx, methodGet, fmt.Sprintf("%s/%s", zonesEndpoint, name), nil, http.StatusOK, &zoneInfo)
 	return zoneInfo, err
 }
 
 // ZoneExists checks if requested zone exists.
 func (client *Client) ZoneExists(ctx context.Context, name string) (bool, error) {
-	req, err := client.newRequest(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/zones/%s", name), nil)
+	req, err := client.newRequest(ctx, methodGet, fmt.Sprintf("%s/%s", zonesEndpoint, name), nil)
 	if err != nil {
 		return false, err
 	}
@@ -400,23 +463,11 @@ func (client *Client) ZoneExists(ctx context.Context, name string) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			tflog.Warn(ctx, "Error closing response body", map[string]interface{}{
-				"error":  err.Error(),
-				"method": req.Method,
-				"url":    req.URL.String(),
-				"zone":   name,
-			})
-		}
-	}()
+	var closeErr error
+	defer closeResponseBody(ctx, resp, req, &closeErr)
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
-		errorResp := new(errorResponse)
-		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return false, fmt.Errorf("error getting zone: %s", name)
-		}
-		return false, fmt.Errorf("error getting zone: %s, reason: %q", name, errorResp.ErrorMsg)
+		return false, handleAPIError(ctx, resp, req)
 	}
 
 	return resp.StatusCode == http.StatusOK, nil
@@ -430,7 +481,7 @@ func (client *Client) CreateZone(ctx context.Context, zoneInfo ZoneInfo) (ZoneIn
 	}
 
 	var createdZoneInfo ZoneInfo
-	err = client.doRequest(ctx, http.MethodPost, "/servers/localhost/zones", body, http.StatusCreated, &createdZoneInfo)
+	err = client.doRequest(ctx, methodPost, zonesEndpoint, body, http.StatusCreated, &createdZoneInfo)
 	return createdZoneInfo, err
 }
 
@@ -441,12 +492,12 @@ func (client *Client) UpdateZone(ctx context.Context, name string, zoneInfo Zone
 		return err
 	}
 
-	return client.doRequest(ctx, http.MethodPut, fmt.Sprintf("/servers/localhost/zones/%s", name), body, http.StatusNoContent, nil)
+	return client.doRequest(ctx, methodPut, fmt.Sprintf("%s/%s", zonesEndpoint, name), body, http.StatusNoContent, nil)
 }
 
 // DeleteZone deletes a zone.
 func (client *Client) DeleteZone(ctx context.Context, name string) error {
-	return client.doRequest(ctx, http.MethodDelete, fmt.Sprintf("/servers/localhost/zones/%s", name), nil, http.StatusNoContent, nil)
+	return client.doRequest(ctx, methodDelete, fmt.Sprintf("%s/%s", zonesEndpoint, name), nil, http.StatusNoContent, nil)
 }
 
 // GetZoneInfoFromCache return ZoneInfo struct.
@@ -724,44 +775,64 @@ func (client *Client) setServerVersion(ctx context.Context) error {
 // ListRecursorZones returns all zones of the recursor server.
 func (client *Client) ListRecursorZones(ctx context.Context) ([]RecursorZone, error) {
 	var zones []RecursorZone
-	err := client.doRequestRecursor(ctx, http.MethodGet, "/servers/localhost/zones", nil, http.StatusOK, &zones)
+	err := client.doRequestRecursor(ctx, methodGet, "/servers/localhost/zones", nil, http.StatusOK, &zones)
 	return zones, err
 }
 
 // GetRecursorZone gets a specific zone.
 func (client *Client) GetRecursorZone(ctx context.Context, zoneName string) (RecursorZone, error) {
 	var zone RecursorZone
-	err := client.doRequestRecursor(ctx, http.MethodGet, fmt.Sprintf("/servers/localhost/zones/%s", zoneName), nil, http.StatusOK, &zone)
+	err := client.doRequestRecursor(ctx, methodGet, fmt.Sprintf("/servers/localhost/zones/%s", zoneName), nil, http.StatusOK, &zone)
 	return zone, err
 }
 
 // CreateRecursorZone creates a new zone.
 func (client *Client) CreateRecursorZone(ctx context.Context, zone RecursorZone) (RecursorZone, error) {
-	body, err := json.Marshal(zone)
+	// Convert to creation struct to avoid sending read-only fields
+	zoneCreate := RecursorZoneCreate{
+		Name:             zone.Name,
+		Type:             zone.Type,
+		Kind:             zone.Kind,
+		Servers:          zone.Servers,
+		RecursionDesired: zone.RecursionDesired,
+		NotifyAllowed:    zone.NotifyAllowed,
+	}
+
+	body, err := json.Marshal(zoneCreate)
 	if err != nil {
 		return RecursorZone{}, err
 	}
 
 	var createdZone RecursorZone
-	err = client.doRequestRecursor(ctx, http.MethodPost, "/servers/localhost/zones", body, http.StatusCreated, &createdZone)
+	err = client.doRequestRecursor(ctx, methodPost, "/servers/localhost/zones", body, http.StatusCreated, &createdZone)
 	return createdZone, err
 }
 
 // UpdateRecursorZone updates an existing zone using PATCH method.
 func (client *Client) UpdateRecursorZone(ctx context.Context, zoneName string, zone RecursorZone) (RecursorZone, error) {
-	body, err := json.Marshal(zone)
+	// Convert to creation struct to avoid sending read-only fields
+	zoneUpdate := RecursorZoneCreate{
+		Name:             zone.Name,
+		Type:             zone.Type,
+		Kind:             zone.Kind,
+		Servers:          zone.Servers,
+		RecursionDesired: zone.RecursionDesired,
+		NotifyAllowed:    zone.NotifyAllowed,
+	}
+
+	body, err := json.Marshal(zoneUpdate)
 	if err != nil {
 		return RecursorZone{}, err
 	}
 
 	var updatedZone RecursorZone
-	err = client.doRequestRecursor(ctx, http.MethodPatch, fmt.Sprintf("/servers/localhost/zones/%s", zoneName), body, http.StatusOK, &updatedZone)
+	err = client.doRequestRecursor(ctx, methodPatch, fmt.Sprintf("/servers/localhost/zones/%s", zoneName), body, http.StatusOK, &updatedZone)
 	return updatedZone, err
 }
 
 // DeleteRecursorZone deletes a zone.
 func (client *Client) DeleteRecursorZone(ctx context.Context, zoneName string) error {
-	return client.doRequestRecursor(ctx, http.MethodDelete, fmt.Sprintf("/servers/localhost/zones/%s", zoneName), nil, http.StatusNoContent, nil)
+	return client.doRequestRecursor(ctx, methodDelete, fmt.Sprintf("/servers/localhost/zones/%s", zoneName), nil, http.StatusNoContent, nil)
 }
 
 // doRequest performs a generic HTTP request with common error handling.
@@ -809,8 +880,19 @@ func (client *Client) doRequestRecursor(ctx context.Context, method, endpoint st
 		return err
 	}
 
+	tflog.Debug(ctx, "Making recursor API request", map[string]interface{}{
+		"method":   method,
+		"endpoint": endpoint,
+		"url":      req.URL.String(),
+		"body":     string(body),
+	})
+
 	resp, err := client.HTTP.Do(req)
 	if err != nil {
+		tflog.Error(ctx, "HTTP request failed", map[string]interface{}{
+			"error": err.Error(),
+			"url":   req.URL.String(),
+		})
 		return err
 	}
 	defer func() {
@@ -823,11 +905,28 @@ func (client *Client) doRequestRecursor(ctx context.Context, method, endpoint st
 		}
 	}()
 
+	tflog.Debug(ctx, "API response received", map[string]interface{}{
+		"status": resp.StatusCode,
+		"url":    req.URL.String(),
+	})
+
 	if resp.StatusCode != successStatus {
-		errorResp := new(errorResponse)
-		if err = json.NewDecoder(resp.Body).Decode(errorResp); err != nil {
-			return fmt.Errorf("error response: %d", resp.StatusCode)
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("error response: %d, failed to read body: %v", resp.StatusCode, err)
 		}
+
+		var errorResp errorResponse
+		if jsonErr := json.Unmarshal(bodyBytes, &errorResp); jsonErr != nil {
+			return fmt.Errorf("error response: %d, body: %s", resp.StatusCode, string(bodyBytes))
+		}
+
+		tflog.Error(ctx, "API error response", map[string]interface{}{
+			"status": resp.StatusCode,
+			"error":  errorResp.ErrorMsg,
+			"body":   string(bodyBytes),
+		})
+
 		return fmt.Errorf("error: %d, reason: %q", resp.StatusCode, errorResp.ErrorMsg)
 	}
 
