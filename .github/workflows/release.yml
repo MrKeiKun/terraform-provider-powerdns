@@ -12,7 +12,6 @@ permissions:
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
-    environment: release
     steps:
       - uses: actions/checkout@v5
         with:
@@ -29,7 +28,6 @@ jobs:
         id: import_gpg
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-          passphrase: ${{ secrets.PASSPHRASE }}
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
@@ -66,29 +64,70 @@ jobs:
           git commit -m "chore: update README version to $(git describe --tags --abbrev=0)" || echo "No changes to commit"
           git push
 
-      - name: Generate subject for release notes
+      - name: Extract changelog for release notes
         id: release-notes
         run: |
           # Get the latest tag
           latest_tag=$(git describe --tags --abbrev=0)
           echo "Latest tag: $latest_tag"
-
-          # Get the previous tag
-          previous_tag=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
-          echo "Previous tag: $previous_tag"
-
-          # Generate changelog
-          if [ -n "$previous_tag" ]; then
-            echo "## What's Changed" > release_notes.md
-            git log --pretty=format:"- %s (%h)" ${previous_tag}..HEAD >> release_notes.md
+          
+          # Remove 'v' prefix for version comparison
+          version=${latest_tag#v}
+          echo "Looking for version: $version"
+          
+          # Read the changelog and extract content for this release
+          if [ -f "CHANGELOG.md" ]; then
+            echo "CHANGELOG.md found, extracting release notes..."
+            
+            # Create temporary file for release notes
+            release_notes_file="release_notes.md"
+            
+            # Find the section for the current version
+            echo "## Release $latest_tag" > "$release_notes_file"
+            
+            # Extract content between current version header and next version header (if any)
+            awk -v version="$version" '
+            BEGIN { found_version=0; content="" }
+            /^## / {
+              if (found_version && content != "") {
+                print content
+                exit
+              }
+              if ($2 ~ "^" version " ") {
+                found_version=1
+                content = $0
+              } else if (found_version) {
+                print content
+                exit
+              }
+              next
+            }
+            found_version { content = content "\n" $0 }
+            END {
+              if (found_version && content != "") {
+                print content
+              }
+            }' CHANGELOG.md >> "$release_notes_file" || echo "Version section not found, using default"
+            
+            # If no version section found, use a generic release note
+            if [ ! -s "$release_notes_file" ] || [ "$(wc -l < "$release_notes_file")" -eq 1 ]; then
+              echo "" >> "$release_notes_file"
+              echo "Release $latest_tag of terraform-provider-powerdns" >> "$release_notes_file"
+            fi
+            
+            echo "subject<<EOF" >> "$GITHUB_OUTPUT"
+            cat "$release_notes_file" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+            
+            # Cleanup
+            rm -f "$release_notes_file"
           else
-            echo "## Initial Release" > release_notes.md
-            echo "First release of terraform-provider-powerdns" >> release_notes.md
+            echo "## Release $latest_tag" > release_notes.md
+            echo "Release of terraform-provider-powerdns" >> release_notes.md
+            echo "subject<<EOF" >> "$GITHUB_OUTPUT"
+            cat release_notes.md >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
           fi
-
-          echo "subject<<EOF" >> "$GITHUB_OUTPUT"
-          cat release_notes.md >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Update release with changelog
         uses: softprops/action-gh-release@v2.4.1
