@@ -41,6 +41,31 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
 
+      - name: Update README version
+        run: |
+          # Get the latest tag
+          latest_tag=$(git describe --tags --abbrev=0)
+          echo "Latest tag: $latest_tag"
+          
+          # Remove 'v' prefix if present for Terraform version compatibility
+          version=${latest_tag#v}
+          echo "Version for README: $version"
+          
+          # Update line 24 in README.md
+          sed -i "24s/version = \".*\"/version = \"$version\"/" README.md
+          
+          # Verify the change
+          echo "Updated README.md line 24:"
+          sed -n '24p' README.md
+
+      - name: Commit and push README changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add README.md
+          git commit -m "chore: update README version to $(git describe --tags --abbrev=0)" || echo "No changes to commit"
+          git push
+
       - name: Generate subject for release notes
         id: release-notes
         run: |
