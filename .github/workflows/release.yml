@@ -17,6 +17,7 @@ jobs:
         with:
           # Allow goreleaser to access older tag information.
           fetch-depth: 0
+          ref: 'main'  # Checkout main branch to avoid detached HEAD issues
 
       - uses: actions/setup-go@v6
         with:
@@ -49,6 +50,10 @@ jobs:
           version=${latest_tag#v}
           echo "Version for README: $version"
           
+          # Show current version on line 24
+          echo "Current README.md line 24:"
+          sed -n '24p' README.md
+          
           # Update line 24 in README.md
           sed -i "24s/version = \".*\"/version = \"$version\"/" README.md
           
@@ -60,9 +65,17 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add README.md
-          git commit -m "chore: update README version to $(git describe --tags --abbrev=0)" || echo "No changes to commit"
-          git push
+          
+          # Check if there are changes to commit
+          if git diff --quiet; then
+            echo "No changes detected in README.md, skipping commit"
+          else
+            echo "Changes detected, committing and pushing..."
+            git add README.md
+            git commit -m "chore: update README version to $(git describe --tags --abbrev=0)"
+            git push origin main
+            echo "README.md changes committed and pushed to main branch"
+          fi
 
       - name: Extract changelog for release notes
         id: release-notes
