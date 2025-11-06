@@ -242,7 +242,6 @@ type RecursorZone struct {
 	Kind             string              `json:"kind"`
 	Servers          []string            `json:"servers"`
 	RecursionDesired bool                `json:"recursion_desired"`
-	NotifyAllowed    bool                `json:"notify_allowed"`
 	URL              string              `json:"url"`
 	RRSets           []ResourceRecordSet `json:"rrsets"`
 }
@@ -255,7 +254,6 @@ type RecursorZoneCreate struct {
 	Kind             string   `json:"kind"`
 	Servers          []string `json:"servers"`
 	RecursionDesired bool     `json:"recursion_desired"`
-	NotifyAllowed    bool     `json:"notify_allowed"`
 }
 
 // ZoneInfo represents a PowerDNS zone object.
@@ -793,7 +791,6 @@ func (client *Client) CreateRecursorZone(ctx context.Context, zone RecursorZone)
 		Kind:             zone.Kind,
 		Servers:          zone.Servers,
 		RecursionDesired: zone.RecursionDesired,
-		NotifyAllowed:    zone.NotifyAllowed,
 	}
 
 	body, err := json.Marshal(zoneCreate)
@@ -814,7 +811,6 @@ func (client *Client) UpdateRecursorZone(ctx context.Context, zoneName string, z
 		Kind:             zone.Kind,
 		Servers:          zone.Servers,
 		RecursionDesired: zone.RecursionDesired,
-		NotifyAllowed:    zone.NotifyAllowed,
 	}
 
 	body, err := json.Marshal(zoneUpdate)

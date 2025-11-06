@@ -24,7 +24,6 @@ func TestAccPDNSRecursorForwardZone_basic(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "servers.#", "1"),
 					resource.TestCheckResourceAttr(resourceName, "servers.0", "8.8.8.8"),
 					resource.TestCheckResourceAttr(resourceName, "recursion_desired", "true"),
-					resource.TestCheckResourceAttr(resourceName, "notify_allowed", "false"),
 					resource.TestCheckResourceAttrSet(resourceName, "id"),
 				),
 			},
@@ -54,7 +53,6 @@ func TestAccPDNSRecursorForwardZone_withOptions(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "servers.0", "8.8.8.8"),
 					resource.TestCheckResourceAttr(resourceName, "servers.1", "8.8.4.4"),
 					resource.TestCheckResourceAttr(resourceName, "recursion_desired", "false"),
-					resource.TestCheckResourceAttr(resourceName, "notify_allowed", "true"),
 				),
 			},
 		},
@@ -115,7 +113,6 @@ resource "powerdns_recursor_forward_zone" "test" {
   zone               = "example.com."
   servers            = ["8.8.8.8"]
   recursion_desired  = true
-  notify_allowed     = false
 }
 `
 
@@ -130,7 +127,6 @@ resource "powerdns_recursor_forward_zone" "test" {
   zone               = "test.example.com."
   servers            = ["8.8.8.8", "8.8.4.4"]
   recursion_desired  = false
-  notify_allowed     = true
 }
 `
 
@@ -145,6 +141,5 @@ resource "powerdns_recursor_forward_zone" "test" {
   zone               = "example.com."
   servers            = ["1.1.1.1", "8.8.8.8"]
   recursion_desired  = false
-  notify_allowed     = false
 }
 `
