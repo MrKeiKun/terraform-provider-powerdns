@@ -27,7 +27,6 @@ type RecursorForwardZoneResourceModel struct {
 	Zone             types.String `tfsdk:"zone"`
 	Servers          types.List   `tfsdk:"servers"`
 	RecursionDesired types.Bool   `tfsdk:"recursion_desired"`
-	NotifyAllowed    types.Bool   `tfsdk:"notify_allowed"`
 	ID               types.String `tfsdk:"id"`
 }
 
@@ -53,11 +52,6 @@ func (r *RecursorForwardZoneResource) Schema(ctx context.Context, req resource.S
 			},
 			"recursion_desired": schema.BoolAttribute{
 				MarkdownDescription: "Whether the RD (Recursion Desired) bit is set. When true, the recursor will set the RD bit on outgoing queries. Default is true.",
-				Optional:            true,
-				Computed:            true,
-			},
-			"notify_allowed": schema.BoolAttribute{
-				MarkdownDescription: "Whether or not to permit incoming NOTIFY to wipe cache for the domain. For zones of type \"Forwarded\".",
 				Optional:            true,
 				Computed:            true,
 			},
@@ -114,12 +108,6 @@ func (r *RecursorForwardZoneResource) Create(ctx context.Context, req resource.C
 		recursionDesired = data.RecursionDesired.ValueBool()
 	}
 
-	// Use false as default to match PowerDNS API behavior
-	notifyAllowed := false
-	if !data.NotifyAllowed.IsNull() {
-		notifyAllowed = data.NotifyAllowed.ValueBool()
-	}
-
 	tflog.SetField(ctx, "zone", zoneName)
 	tflog.Debug(ctx, "Creating recursor forward zone")
 
@@ -129,7 +117,6 @@ func (r *RecursorForwardZoneResource) Create(ctx context.Context, req resource.C
 		Kind:             "Forwarded",
 		Servers:          servers,
 		RecursionDesired: recursionDesired,
-		NotifyAllowed:    notifyAllowed,
 	}
 
 	createdZone, err := r.client.CreateRecursorZone(ctx, recursorZone)
@@ -147,7 +134,6 @@ func (r *RecursorForwardZoneResource) Create(ctx context.Context, req resource.C
 	}
 	data.Servers, _ = types.ListValueFrom(ctx, types.StringType, serversList)
 	data.RecursionDesired = types.BoolValue(createdZone.RecursionDesired)
-	data.NotifyAllowed = types.BoolValue(createdZone.NotifyAllowed)
 
 	tflog.Info(ctx, "Created recursor forward zone", map[string]any{"id": createdZone.Name})
 
@@ -195,7 +181,6 @@ func (r *RecursorForwardZoneResource) Read(ctx context.Context, req resource.Rea
 	}
 	data.Servers, _ = types.ListValueFrom(ctx, types.StringType, serversList)
 	data.RecursionDesired = types.BoolValue(zone.RecursionDesired)
-	data.NotifyAllowed = types.BoolValue(zone.NotifyAllowed)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -230,11 +215,6 @@ func (r *RecursorForwardZoneResource) Update(ctx context.Context, req resource.U
 		recursionDesired = data.RecursionDesired.ValueBool()
 	}
 
-	notifyAllowed := false
-	if !data.NotifyAllowed.IsNull() {
-		notifyAllowed = data.NotifyAllowed.ValueBool()
-	}
-
 	tflog.SetField(ctx, "zone", zoneName)
 	tflog.Debug(ctx, "Updating recursor forward zone")
 
@@ -251,7 +231,6 @@ func (r *RecursorForwardZoneResource) Update(ctx context.Context, req resource.U
 		Kind:             "Forwarded",
 		Servers:          servers,
 		RecursionDesired: recursionDesired,
-		NotifyAllowed:    notifyAllowed,
 	}
 
 	_, err = r.client.CreateRecursorZone(ctx, updateData)

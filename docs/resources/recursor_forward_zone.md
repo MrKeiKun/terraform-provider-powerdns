@@ -14,20 +14,19 @@ Provides a PowerDNS recursor forward zone resource for managing DNS forwarding c
 
 ```hcl
 resource "powerdns_recursor_forward_zone" "example" {
-  zone    = "example.com"
+  zone    = "example.com."
   servers = ["192.0.2.1", "192.0.2.2"]
 }
 
 resource "powerdns_recursor_forward_zone" "internal" {
-  zone    = "internal.company.com"
+  zone    = "internal.company.com."
   servers = ["10.0.0.53"]
 }
 
 resource "powerdns_recursor_forward_zone" "secure_forward" {
-  zone              = "secure.company.com"
+  zone              = "secure.company.com."
   servers           = ["10.0.0.53"]
   recursion_desired = true
-  notify_allowed    = true
 }
 ```
 
@@ -38,7 +37,6 @@ This resource supports the following arguments:
 - `zone` - (Required) The DNS zone name to forward queries for.
 - `servers` - (Required) A list of DNS server IP addresses to forward queries to for this zone.
 - `recursion_desired` - (Optional) Whether the RD (Recursion Desired) bit is set. When true, the recursor will set the RD bit on outgoing queries. Default is true.
-- `notify_allowed` - (Optional) Whether or not to permit incoming NOTIFY to wipe cache for the domain. Default is false.
 
 ## Notes
 
@@ -46,5 +44,3 @@ This resource supports the following arguments:
 - Forward zone configuration is managed through the `forward-zones` recursor setting.
 - Multiple forward zones can be configured independently.
 - Changes take effect immediately in the running recursor.
-- The `notify_allowed` field allows incoming NOTIFY messages to wipe cache for the domain.
-

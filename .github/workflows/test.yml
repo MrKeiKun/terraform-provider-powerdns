@@ -129,6 +129,7 @@ jobs:
           timeout 20m go test -v -coverprofile=acceptance-coverage.out -covermode=atomic $(go list ./... | grep -v 'vendor') -parallel=5 -timeout=120m
 
       - name: Merge coverage profiles
+        if: github.ref == 'refs/heads/main'
         run: |
           # Install gocovmerge if coverage files exist
           if [ -f "unit-coverage.out" ] || [ -f "acceptance-coverage.out" ]; then
@@ -144,8 +145,10 @@ jobs:
           fi
 
       - name: Upload coverage to Codecov
+        if: github.ref == 'refs/heads/main'
         uses: codecov/codecov-action@v5.5.1
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.out
           flags: tests
           name: codecov-umbrella

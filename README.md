@@ -2,9 +2,10 @@
 
 The Terraform PowerDNS provider allows you to manage PowerDNS zones and records using Terraform. It is maintained by MrKeiKun.
 
-- Website: https://www.terraform.io
-- [![Gitter chat](https://badges.gitter.im/hashicorp-terraform/Lobby.png)](https://gitter.im/hashicorp-terraform/Lobby)
-- Mailing list: [Google Groups](http://groups.google.com/group/terraform-tool)
+![Release Badge](https://img.shields.io/github/v/release/MrKeiKun/terraform-provider-powerdns.svg)
+[![Test](https://github.com/MrKeiKun/terraform-provider-powerdns/actions/workflows/test.yml/badge.svg)](https://github.com/MrKeiKun/terraform-provider-powerdns/actions/workflows/test.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/terraform-providers/terraform-provider-powerdns)](https://goreportcard.com/report/github.com/terraform-providers/terraform-provider-powerdns)
+[![codecov](https://codecov.io/gh/MrKeiKun/terraform-provider-powerdns/branch/main/graph/badge.svg)](https://codecov.io/gh/MrKeiKun/terraform-provider-powerdns)
 
 ## Requirements
 
